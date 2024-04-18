@@ -1,30 +1,35 @@
 package site.ycsb.db;
 
+import org.apache.iceberg.Schema;
+import org.apache.iceberg.Transaction;
+import org.apache.iceberg.catalog.TableIdentifier;
 import site.ycsb.ByteArrayByteIterator;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.Vector;
+import java.util.*;
 
 public class CatalogClient extends DB {
 
+  Catalog catalog;
 
+  private Optional<TableIdentifier> getIdentifierFromTableName(String tableName){
+    return catalog.listTables(EMPTY_NAMESPACE).stream()
+        .filter(identifier -> identifier.name().equals(tableName))
+        .findAny();
+  }
 
-//  @Override
-//  public void init() throws DBException {
-//    System.out.println("Init");
-//  }
-//
+  @Override
+  public void init() throws DBException {
+    // we should initialize Catalog here to some concrete implementation?
+  }
+
 //  @Override
 //  public void cleanup() throws DBException {
 //    System.out.println("cleanup");
 //  }
-
 
   /**
    * Read a record from the database. Each field/value pair from the result will be stored in a HashMap.
@@ -36,6 +41,7 @@ public class CatalogClient extends DB {
    * @return The result of the operation.
    */
   public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result){
+    // we don't care about reads?
     return Status.OK;
   }
 
@@ -53,6 +59,7 @@ public class CatalogClient extends DB {
   @Override
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
                               Vector<HashMap<String, ByteIterator>> result){
+    // we also don't care about reads...?
     return Status.OK;
   }
 
@@ -67,7 +74,22 @@ public class CatalogClient extends DB {
    */
   @Override
   public Status update(String table, String key, Map<String, ByteIterator> values){
-    return Status.OK;
+
+    Optional<TableIdentifier> tblIdentifier = getIdentifierFromTableName(table);
+
+    if(!tblIdentifier.isPresent()){
+      return Status.BAD_REQUEST;
+    } else {
+      return Status.OK;
+    }
+
+
+    // WIP
+  //
+  //    Transaction tx = catalog.newReplaceTableTransaction(tblIdentifier, ,false);
+  //    tx.newRowDelta() for hashmap of key/values to update
+
+
   }
 
   /**
@@ -82,8 +104,16 @@ public class CatalogClient extends DB {
   @Override
   public Status insert(String table, String key, Map<String, ByteIterator> values){
 
-    return Status.OK;
+    Optional<TableIdentifier> tblIdentifier = getIdentifierFromTableName(table);
 
+    if(!tblIdentifier.isPresent()){
+      return Status.BAD_REQUEST;
+    } else {
+      return Status.OK;
+    }
+
+//    Transaction tx = catalog.newReplaceTableTransaction(tblIdentifier, ,false);
+//    tx.newAppend()
   }
 
   /**
@@ -95,7 +125,19 @@ public class CatalogClient extends DB {
    */
   @Override
   public Status delete(String table, String key){
-    return Status.OK;
+
+    Optional<TableIdentifier> tblIdentifier = getIdentifierFromTableName(table);
+
+    if(!tblIdentifier.isPresent()){
+      return Status.BAD_REQUEST;
+    }
+
+    if(catalog.dropTable(tblIdentifier.get())){
+      return Status.OK;
+    } else {
+      return Status.ERROR;
+    }
+
   }
 
 }
