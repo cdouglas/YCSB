@@ -1,22 +1,40 @@
 package site.ycsb.db;
 
-import org.apache.iceberg.Schema;
-import org.apache.iceberg.Transaction;
+import org.apache.iceberg.*;
+import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
 import site.ycsb.ByteArrayByteIterator;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
-
 import java.util.*;
+import static org.apache.iceberg.types.Types.NestedField.required;
+import static org.apache.iceberg.types.Types.*;
 
 public class CatalogClient extends DB {
 
   Catalog catalog;
 
+  // Schema passed to create tables
+  static final Schema SCHEMA =
+      new Schema(
+          required(3, "id", IntegerType.get(), "unique ID"),
+          required(4, "data", StringType.get()));
+
+  // This is the actual schema for the table, with column IDs reassigned
+  static final Schema TABLE_SCHEMA =
+      new Schema(
+          required(1, "id", IntegerType.get(), "unique ID"),
+          required(2, "data", StringType.get()));
+
+
+
+  static final PartitionSpec SPEC = PartitionSpec.builderFor(SCHEMA).bucket("data", 16).build();
+
+
   private Optional<TableIdentifier> getIdentifierFromTableName(String tableName){
-    return catalog.listTables(EMPTY_NAMESPACE).stream()
+    return catalog.listTables(Namespace.empty()).stream()
         .filter(identifier -> identifier.name().equals(tableName))
         .findAny();
   }
@@ -79,17 +97,16 @@ public class CatalogClient extends DB {
 
     if(!tblIdentifier.isPresent()){
       return Status.BAD_REQUEST;
-    } else {
-      return Status.OK;
     }
 
+//    var tx = catalog.newReplaceTableTransaction(
+//        tblIdentifier.get(),
+//        TABLE_SCHEMA,
+//        false
+//    );
 
-    // WIP
-  //
-  //    Transaction tx = catalog.newReplaceTableTransaction(tblIdentifier, ,false);
-  //    tx.newRowDelta() for hashmap of key/values to update
 
-
+    return Status.OK;
   }
 
   /**
@@ -104,16 +121,31 @@ public class CatalogClient extends DB {
   @Override
   public Status insert(String table, String key, Map<String, ByteIterator> values){
 
-    Optional<TableIdentifier> tblIdentifier = getIdentifierFromTableName(table);
+    var tblIdentifier = getIdentifierFromTableName(table);
 
     if(!tblIdentifier.isPresent()){
       return Status.BAD_REQUEST;
-    } else {
-      return Status.OK;
     }
 
-//    Transaction tx = catalog.newReplaceTableTransaction(tblIdentifier, ,false);
-//    tx.newAppend()
+//    var tx = catalog.newReplaceTableTransaction(
+//        tblIdentifier.get(),
+//        TABLE_SCHEMA,
+//        false
+//    );
+//
+//    AppendFiles appendFiles = tx.newAppend();
+//    for (var entry : values.entrySet()){
+//      var df = DataFiles.builder(SPEC)
+//          .withPath(entry.getKey())
+//          .withFileSizeInBytes(entry.getValue().bytesLeft())
+//          .withPartitionPath("data_bucket=0")
+//          .build();
+//      appendFiles = appendFiles.appendFile(df); // this is weird?
+//    }
+//    appendFiles.commit();
+//    tx.commitTransaction();
+
+    return Status.OK;
   }
 
   /**
