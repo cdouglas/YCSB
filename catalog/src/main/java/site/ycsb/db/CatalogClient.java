@@ -1,29 +1,33 @@
 package site.ycsb.db;
 
+import com.google.api.client.util.Maps;
+import com.google.cloud.storage.Storage;
+import com.google.cloud.storage.testing.RemoteStorageHelper;
 import org.apache.iceberg.*;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.gcp.GCPProperties;
+import org.apache.iceberg.io.FileIOCatalog;
 import site.ycsb.ByteArrayByteIterator;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.util.*;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.apache.iceberg.types.Types.*;
+import org.apache.iceberg.gcp.gcs.GCSFileIO;
 
 public class CatalogClient extends DB {
 
-  Catalog catalog;
+  private FileIOCatalog catalog;
+  private Storage storage;
 
-  // Schema passed to create tables
   static final Schema SCHEMA =
-      new Schema(
-          required(3, "id", IntegerType.get(), "unique ID"),
-          required(4, "data", StringType.get()));
-
-  // This is the actual schema for the table, with column IDs reassigned
-  static final Schema TABLE_SCHEMA =
       new Schema(
           required(1, "id", IntegerType.get(), "unique ID"),
           required(2, "data", StringType.get()));
@@ -39,15 +43,36 @@ public class CatalogClient extends DB {
         .findAny();
   }
 
+
+
   @Override
   public void init() throws DBException {
-    // we should initialize Catalog here to some concrete implementation?
+
+
+    final File credFile = new File("./.secret/lst-consistency-8dd2dfbea73a.json");
+
+    try (FileInputStream credentials = new FileInputStream(credFile)) {
+      storage = RemoteStorageHelper.create("lst-consistency", credentials).getOptions().getService();
+    } catch (Exception e){
+      throw new DBException("Failed to load credentials");
+    }
+
+    try{
+      GCSFileIO io = new GCSFileIO(() -> storage, new GCPProperties());
+      String warehouseLocation = "gs://benchmarking-ycsb";
+
+      final Map<String, String> properties = Maps.newHashMap();
+      properties.put(CatalogProperties.WAREHOUSE_LOCATION, warehouseLocation);
+      final String location = warehouseLocation + "/catalog";
+      catalog = new FileIOCatalog("test", location, null, io, Maps.newHashMap());
+      catalog.initialize("YCSB-Bench", properties);
+
+    } catch (Exception e){
+      throw new DBException("Failed to load remote / init storage or catalog");
+    }
+
   }
 
-//  @Override
-//  public void cleanup() throws DBException {
-//    System.out.println("cleanup");
-//  }
 
   /**
    * Read a record from the database. Each field/value pair from the result will be stored in a HashMap.
@@ -93,18 +118,9 @@ public class CatalogClient extends DB {
   @Override
   public Status update(String table, String key, Map<String, ByteIterator> values){
 
-    Optional<TableIdentifier> tblIdentifier = getIdentifierFromTableName(table);
-
-    if(!tblIdentifier.isPresent()){
-      return Status.BAD_REQUEST;
-    }
-
-//    var tx = catalog.newReplaceTableTransaction(
-//        tblIdentifier.get(),
-//        TABLE_SCHEMA,
-//        false
-//    );
-
+    var tid = TableIdentifier.of(Namespace.empty(), key);
+    var tx = catalog.newCreateTableTransaction(tid, SCHEMA);
+    tx.commitTransaction();
 
     return Status.OK;
   }
@@ -121,29 +137,11 @@ public class CatalogClient extends DB {
   @Override
   public Status insert(String table, String key, Map<String, ByteIterator> values){
 
-    var tblIdentifier = getIdentifierFromTableName(table);
 
-    if(!tblIdentifier.isPresent()){
-      return Status.BAD_REQUEST;
-    }
+    var tid = TableIdentifier.of(Namespace.empty(), key);
+    var tx = catalog.newCreateTableTransaction(tid, SCHEMA);
+    tx.commitTransaction();
 
-//    var tx = catalog.newReplaceTableTransaction(
-//        tblIdentifier.get(),
-//        TABLE_SCHEMA,
-//        false
-//    );
-//
-//    AppendFiles appendFiles = tx.newAppend();
-//    for (var entry : values.entrySet()){
-//      var df = DataFiles.builder(SPEC)
-//          .withPath(entry.getKey())
-//          .withFileSizeInBytes(entry.getValue().bytesLeft())
-//          .withPartitionPath("data_bucket=0")
-//          .build();
-//      appendFiles = appendFiles.appendFile(df); // this is weird?
-//    }
-//    appendFiles.commit();
-//    tx.commitTransaction();
 
     return Status.OK;
   }
