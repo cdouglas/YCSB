@@ -3,12 +3,15 @@ package site.ycsb.db;
 import com.google.api.client.util.Maps;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.testing.RemoteStorageHelper;
-import org.apache.iceberg.*;
+import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.iceberg.CatalogProperties;
+import org.apache.iceberg.Schema;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.exceptions.AlreadyExistsException;
+import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.gcp.GCPProperties;
 import org.apache.iceberg.io.FileIOCatalog;
-import site.ycsb.ByteArrayByteIterator;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
@@ -16,7 +19,6 @@ import site.ycsb.Status;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.util.*;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.apache.iceberg.types.Types.*;
@@ -32,10 +34,7 @@ public class CatalogClient extends DB {
           required(1, "id", IntegerType.get(), "unique ID"),
           required(2, "data", StringType.get()));
 
-
-
-  static final PartitionSpec SPEC = PartitionSpec.builderFor(SCHEMA).bucket("data", 16).build();
-
+  //static final PartitionSpec SPEC = PartitionSpec.builderFor(SCHEMA).bucket("data", 16).build();
 
   private Optional<TableIdentifier> getIdentifierFromTableName(String tableName){
     return catalog.listTables(Namespace.empty()).stream()
@@ -43,23 +42,29 @@ public class CatalogClient extends DB {
         .findAny();
   }
 
-
+  final File credentials() {
+    // https://cloud.google.com/docs/authentication/provide-credentials-adc#local-dev
+    String location = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
+    if (null == location) {
+      location = getProperties().getProperty("gcp.creds");
+    }
+    if (null == location) {
+      throw new IllegalArgumentException("Missing credential location");
+    }
+    return new File(location);
+  }
 
   @Override
   public void init() throws DBException {
-
-
-    final File credFile = new File("./.secret/lst-consistency-8dd2dfbea73a.json");
-
-    try (FileInputStream credentials = new FileInputStream(credFile)) {
+    try (FileInputStream credentials = new FileInputStream(credentials())) {
       storage = RemoteStorageHelper.create("lst-consistency", credentials).getOptions().getService();
     } catch (Exception e){
       throw new DBException("Failed to load credentials");
     }
 
-    try{
+    try {
       GCSFileIO io = new GCSFileIO(() -> storage, new GCPProperties());
-      String warehouseLocation = "gs://benchmarking-ycsb";
+      String warehouseLocation = "gs://benchmarking-ycsb/" + RandomStringUtils.randomAlphanumeric(8);
 
       final Map<String, String> properties = Maps.newHashMap();
       properties.put(CatalogProperties.WAREHOUSE_LOCATION, warehouseLocation);
@@ -116,12 +121,15 @@ public class CatalogClient extends DB {
    * @return The result of the operation.
    */
   @Override
-  public Status update(String table, String key, Map<String, ByteIterator> values){
-
+  public Status update(String table, String key, Map<String, ByteIterator> values) {
     var tid = TableIdentifier.of(Namespace.empty(), key);
-    var tx = catalog.newCreateTableTransaction(tid, SCHEMA);
-    tx.commitTransaction();
-
+    // var tx = catalog.newCreateTableTransaction(tid, SCHEMA);
+    try {
+      var tx = catalog.buildTable(tid, SCHEMA).createOrReplaceTransaction();
+      values.forEach((k, v) -> tx.updateProperties().set(k, v.toString()));
+    } catch (CommitFailedException e) {
+      return Status.ERROR;
+    }
     return Status.OK;
   }
 
@@ -136,13 +144,14 @@ public class CatalogClient extends DB {
    */
   @Override
   public Status insert(String table, String key, Map<String, ByteIterator> values){
-
-
     var tid = TableIdentifier.of(Namespace.empty(), key);
-    var tx = catalog.newCreateTableTransaction(tid, SCHEMA);
-    tx.commitTransaction();
-
-
+    try {
+      catalog.newCreateTableTransaction(tid, SCHEMA).commitTransaction();
+    } catch (CommitFailedException e) {
+      return Status.ERROR;
+    } catch (AlreadyExistsException e) {
+      return Status.BAD_REQUEST;
+    }
     return Status.OK;
   }
 
@@ -155,19 +164,14 @@ public class CatalogClient extends DB {
    */
   @Override
   public Status delete(String table, String key){
-
     Optional<TableIdentifier> tblIdentifier = getIdentifierFromTableName(table);
-
-    if(!tblIdentifier.isPresent()){
+    if (!tblIdentifier.isPresent()) {
       return Status.BAD_REQUEST;
     }
-
-    if(catalog.dropTable(tblIdentifier.get())){
-      return Status.OK;
-    } else {
+    if (!catalog.dropTable(tblIdentifier.get())) {
       return Status.ERROR;
     }
-
+    return Status.OK;
   }
 
 }

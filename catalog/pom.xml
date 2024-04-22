@@ -28,6 +28,8 @@
 
   <properties>
     <checkstyle.skip>true</checkstyle.skip>
+    <hadoop.version>3.3.6</hadoop.version>
+    <iceberg.version>1.6.0-SNAPSHOT</iceberg.version>
   </properties>
 
   <dependencies>
@@ -37,44 +39,42 @@
       <version>${project.version}</version>
       <scope>provided</scope>
     </dependency>
-<!--    <dependency>-->
-<!--      <groupId>org.apache.iceberg</groupId>-->
-<!--      <artifactId>iceberg-core</artifactId>-->
-<!--      <version>1.5.0</version>-->
-<!--    </dependency>-->
-
-       <dependency>
-          <groupId>org.apache.iceberg</groupId>
-          <artifactId>iceberg-core</artifactId>
-          <version>6ca2071</version>
-       </dependency>
+    <dependency>
+       <groupId>org.apache.iceberg</groupId>
+       <artifactId>iceberg-core</artifactId>
+       <version>${iceberg.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
+      <version>3.14.0</version>
+    </dependency>
     <dependency>
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-api</artifactId>
-      <version>6ca2071</version>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.hadoop</groupId>
-      <artifactId>hadoop-common</artifactId>
-      <version>3.4.0</version>
+      <version>${iceberg.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-common</artifactId>
-      <version>1.5.0</version>
+      <version>${iceberg.version}</version>
       <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-gcp</artifactId>
-      <version>6ca2071</version>
+      <version>${iceberg.version}</version>
     </dependency>
     <dependency>
       <groupId>com.google.cloud</groupId>
       <artifactId>google-cloud-storage</artifactId>
       <version>2.37.0</version>
     </dependency>
-
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-common</artifactId>
+      <version>${hadoop.version}</version>
+    </dependency>
   </dependencies>
 
 </project>
