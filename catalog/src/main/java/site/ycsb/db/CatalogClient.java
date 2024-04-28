@@ -1,33 +1,27 @@
 package site.ycsb.db;
 
-import com.google.api.client.util.Maps;
 import com.google.cloud.storage.Storage;
-import com.google.cloud.storage.testing.RemoteStorageHelper;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.Schema;
+import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.CommitFailedException;
-import org.apache.iceberg.gcp.GCPProperties;
-import org.apache.iceberg.io.FileIOCatalog;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.util.*;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.apache.iceberg.types.Types.*;
-import org.apache.iceberg.gcp.gcs.GCSFileIO;
 
-public class CatalogClient extends DB {
+public abstract class CatalogClient extends DB {
 
-  private FileIOCatalog catalog;
-  private Storage storage;
+  protected Catalog catalog;
+  protected Storage storage;
 
   static final Schema SCHEMA =
       new Schema(
@@ -36,11 +30,6 @@ public class CatalogClient extends DB {
 
   //static final PartitionSpec SPEC = PartitionSpec.builderFor(SCHEMA).bucket("data", 16).build();
 
-  private Optional<TableIdentifier> getIdentifierFromTableName(String tableName){
-    return catalog.listTables(Namespace.empty()).stream()
-        .filter(identifier -> identifier.name().equals(tableName))
-        .findAny();
-  }
 
   final File credentials() {
     // https://cloud.google.com/docs/authentication/provide-credentials-adc#local-dev
@@ -54,29 +43,19 @@ public class CatalogClient extends DB {
     return new File(location);
   }
 
-  @Override
-  public void init() throws DBException {
-    try (FileInputStream credentials = new FileInputStream(credentials())) {
-      storage = RemoteStorageHelper.create("lst-consistency", credentials).getOptions().getService();
-    } catch (Exception e){
-      throw new DBException("Failed to load credentials");
-    }
+  protected String warehouse = "gs://benchmarking-ycsb/" + RandomStringUtils.randomAlphanumeric(8);
+  final String gs_location = warehouse + "/catalog";
 
-    try {
-      GCSFileIO io = new GCSFileIO(() -> storage, new GCPProperties());
-      String warehouseLocation = "gs://benchmarking-ycsb/" + RandomStringUtils.randomAlphanumeric(8);
-
-      final Map<String, String> properties = Maps.newHashMap();
-      properties.put(CatalogProperties.WAREHOUSE_LOCATION, warehouseLocation);
-      final String location = warehouseLocation + "/catalog";
-      catalog = new FileIOCatalog("test", location, null, io, Maps.newHashMap());
-      catalog.initialize("YCSB-Bench", properties);
-
-    } catch (Exception e){
-      throw new DBException("Failed to load remote / init storage or catalog");
-    }
-
+  private Optional<TableIdentifier> getIdentifierFromTableName(String tableName){
+    return catalog.listTables(Namespace.empty()).stream()
+        .filter(identifier -> identifier.name().equals(tableName))
+        .findAny();
   }
+
+
+
+  @Override
+  abstract public void init() throws DBException;
 
 
   /**
@@ -89,7 +68,6 @@ public class CatalogClient extends DB {
    * @return The result of the operation.
    */
   public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result){
-    // we don't care about reads?
     return Status.OK;
   }
 
@@ -107,7 +85,6 @@ public class CatalogClient extends DB {
   @Override
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
                               Vector<HashMap<String, ByteIterator>> result){
-    // we also don't care about reads...?
     return Status.OK;
   }
 
@@ -123,7 +100,6 @@ public class CatalogClient extends DB {
   @Override
   public Status update(String table, String key, Map<String, ByteIterator> values) {
     var tid = TableIdentifier.of(Namespace.empty(), key);
-    // var tx = catalog.newCreateTableTransaction(tid, SCHEMA);
     try {
       var tx = catalog.buildTable(tid, SCHEMA).createOrReplaceTransaction();
       values.forEach((k, v) -> tx.updateProperties().set(k, v.toString()));
