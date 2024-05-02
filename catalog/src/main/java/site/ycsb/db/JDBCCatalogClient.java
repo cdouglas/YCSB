@@ -3,6 +3,7 @@ package site.ycsb.db;
 
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.CatalogUtil;
+import org.apache.iceberg.io.FileIOCatalog;
 import org.apache.iceberg.jdbc.JdbcCatalog;
 import site.ycsb.DBException;
 
@@ -10,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-public class JDBCCatalogClient extends CatalogClient {
+public class JDBCCatalogClient extends CatalogClient<FileIOCatalog> {
 
   @Override
   public void init() throws DBException {

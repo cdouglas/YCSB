@@ -18,8 +18,8 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
-          <source>10</source>
-          <target>10</target>
+          <source>16</source>
+          <target>16</target>
         </configuration>
       </plugin>
     </plugins>
@@ -30,7 +30,7 @@
     <!--    feel free to update these back to what they were -->
     <checkstyle.skip>true</checkstyle.skip>
     <hadoop.version>3.3.6</hadoop.version>
-    <iceberg.local_version>6ca2071</iceberg.local_version>
+    <iceberg.local_version>cfe6e51</iceberg.local_version>
     <iceberg.maven_version>1.5.0</iceberg.maven_version>
   </properties>
 

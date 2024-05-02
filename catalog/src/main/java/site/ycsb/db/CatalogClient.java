@@ -2,23 +2,27 @@ package site.ycsb.db;
 
 import com.google.cloud.storage.Storage;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.iceberg.Schema;
-import org.apache.iceberg.catalog.Catalog;
-import org.apache.iceberg.catalog.Namespace;
-import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.*;
+import org.apache.iceberg.catalog.*;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
+import site.ycsb.generator.ExponentialGenerator;
+import site.ycsb.generator.ZipfianGenerator;
 
 import java.io.File;
 import java.util.*;
+
+import static java.lang.Math.PI;
+import static java.lang.Math.max;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.apache.iceberg.types.Types.*;
 
-public abstract class CatalogClient extends DB {
+public abstract class CatalogClient <
+    C extends SupportsCatalogTransactions & SupportsNamespaces & Catalog> extends DB {
 
   protected Catalog catalog;
   protected Storage storage;
@@ -28,8 +32,38 @@ public abstract class CatalogClient extends DB {
           required(1, "id", IntegerType.get(), "unique ID"),
           required(2, "data", StringType.get()));
 
-  //static final PartitionSpec SPEC = PartitionSpec.builderFor(SCHEMA).bucket("data", 16).build();
+  protected static final PartitionSpec SPEC =
+      PartitionSpec.builderFor(SCHEMA).bucket("data", 16).build();
 
+
+  protected static final DataFile FILE_A =
+      DataFiles.builder(SPEC)
+          .withPath("/path/to/data-a.parquet")
+          .withFileSizeInBytes(10)
+          .withPartitionPath("data_bucket=0") // easy way to set partition data for now
+          .withRecordCount(1)
+          .build();
+  protected static final DataFile FILE_B =
+      DataFiles.builder(SPEC)
+          .withPath("/path/to/data-b.parquet")
+          .withFileSizeInBytes(10)
+          .withPartitionPath("data_bucket=1") // easy way to set partition data for now
+          .withRecordCount(1)
+          .build();
+  protected static final DataFile FILE_C =
+      DataFiles.builder(SPEC)
+          .withPath("/path/to/data-c.parquet")
+          .withFileSizeInBytes(10)
+          .withPartitionPath("data_bucket=2") // easy way to set partition data for now
+          .withRecordCount(1)
+          .build();
+  protected static final DataFile FILE_D =
+      DataFiles.builder(SPEC)
+          .withPath("/path/to/data-d.parquet")
+          .withFileSizeInBytes(10)
+          .withPartitionPath("data_bucket=3") // easy way to set partition data for now
+          .withRecordCount(1)
+          .build();
 
   final File credentials() {
     // https://cloud.google.com/docs/authentication/provide-credentials-adc#local-dev
@@ -46,13 +80,43 @@ public abstract class CatalogClient extends DB {
   protected String warehouse = "gs://benchmarking-ycsb/" + RandomStringUtils.randomAlphanumeric(8);
   final String gs_location = warehouse + "/catalog";
 
+  final CatalogTransaction.IsolationLevel SSI = CatalogTransaction.IsolationLevel.SERIALIZABLE;
+
+  boolean  isMultiTable = true;
+
   private Optional<TableIdentifier> getIdentifierFromTableName(String tableName){
     return catalog.listTables(Namespace.empty()).stream()
         .filter(identifier -> identifier.name().equals(tableName))
         .findAny();
   }
 
+  private String genTableName(){
+    return  zGen.nextValue().toString();
+  }
 
+  private List<TableIdentifier> getTxTables(){
+
+    int tablesToUse =  max(1, eGen.nextValue().intValue());
+
+    HashSet<TableIdentifier> tables = new HashSet<>();
+
+    while(tables.size() < tablesToUse){
+      tables.add(TableIdentifier.of(Namespace.empty(), genTableName()));
+    }
+
+    return tables.stream().toList();
+  }
+
+  private void init_all_tables(){
+    for(int i = 0; i < NUM_TABLES; i++){
+      TableIdentifier identifier = TableIdentifier.of(Namespace.empty(), Integer.toString(i));
+      catalog.createTable(identifier, SCHEMA, SPEC);
+    }
+  }
+
+  private final int NUM_TABLES = 20;
+  private final ZipfianGenerator zGen = new ZipfianGenerator(NUM_TABLES);
+  private final ExponentialGenerator eGen = new ExponentialGenerator(2);
 
   @Override
   abstract public void init() throws DBException;
@@ -99,14 +163,36 @@ public abstract class CatalogClient extends DB {
    */
   @Override
   public Status update(String table, String key, Map<String, ByteIterator> values) {
-    var tid = TableIdentifier.of(Namespace.empty(), key);
-    try {
-      var tx = catalog.buildTable(tid, SCHEMA).createOrReplaceTransaction();
-      values.forEach((k, v) -> tx.updateProperties().set(k, v.toString()));
-    } catch (CommitFailedException e) {
-      return Status.ERROR;
+    if(isMultiTable){
+      // we should add retry logic here.. right?
+
+      CatalogTransaction catalogTransaction = ((C) catalog).createTransaction(SSI);
+      Catalog txCatalog = catalogTransaction.asCatalog();
+      for(TableIdentifier t : getTxTables()){
+        switch (t.hashCode() % 3){
+          case 0:
+            txCatalog.loadTable(t).newFastAppend().appendFile(FILE_A).appendFile(FILE_B).commit();
+          case 1:
+            txCatalog.loadTable(t).newDelete().deleteFile(FILE_C).commit();
+            txCatalog.loadTable(t).newFastAppend().appendFile(FILE_B).appendFile(FILE_C).commit();
+          case 2:
+            txCatalog.loadTable(t).newDelete().deleteFile(FILE_A).commit();
+            txCatalog.loadTable(t).newAppend().appendFile(FILE_D).commit();
+        }
+      }
+
+      catalogTransaction.commitTransaction();
+
+    } else {
+      var tid = TableIdentifier.of(Namespace.empty(), key);
+      try {
+        var tx = catalog.buildTable(tid, SCHEMA).createOrReplaceTransaction();
+        values.forEach((k, v) -> tx.updateProperties().set(k, v.toString()));
+      } catch (CommitFailedException e) {
+        return Status.ERROR;
+      }
     }
-    return Status.OK;
+      return Status.OK;
   }
 
   /**
@@ -120,15 +206,20 @@ public abstract class CatalogClient extends DB {
    */
   @Override
   public Status insert(String table, String key, Map<String, ByteIterator> values){
-    var tid = TableIdentifier.of(Namespace.empty(), key);
-    try {
-      catalog.newCreateTableTransaction(tid, SCHEMA).commitTransaction();
-    } catch (CommitFailedException e) {
-      return Status.ERROR;
-    } catch (AlreadyExistsException e) {
-      return Status.BAD_REQUEST;
+    if(isMultiTable){
+      // we assume all tables are already inserted, MTT overhead in updating metadata as simulated above
+      return Status.OK;
+    } else {
+      var tid = TableIdentifier.of(Namespace.empty(), key);
+      try {
+        catalog.newCreateTableTransaction(tid, SCHEMA).commitTransaction();
+      } catch (CommitFailedException e) {
+        return Status.ERROR;
+      } catch (AlreadyExistsException e) {
+        return Status.BAD_REQUEST;
+      }
+      return Status.OK;
     }
-    return Status.OK;
   }
 
   /**

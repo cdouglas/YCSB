@@ -12,7 +12,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.util.Map;
 
-public class FileIOCatalogClient extends CatalogClient {
+public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
   @Override
   public void init() throws DBException {
       System.out.println("Big boy");

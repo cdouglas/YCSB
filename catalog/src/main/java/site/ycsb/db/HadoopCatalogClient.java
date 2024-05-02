@@ -2,7 +2,9 @@ package site.ycsb.db;
 
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.iceberg.BaseMetastoreCatalog;
 import org.apache.iceberg.hadoop.HadoopCatalog;
+import org.apache.iceberg.io.FileIOCatalog;
 import site.ycsb.DBException;
 
 import java.io.File;
@@ -10,7 +12,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.Map;
 
-public class HadoopCatalogClient extends CatalogClient {
+public class HadoopCatalogClient extends CatalogClient<FileIOCatalog> {
 
 
 
