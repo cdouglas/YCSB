@@ -15,6 +15,7 @@ import site.ycsb.generator.ZipfianGenerator;
 
 import java.io.File;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static java.lang.Math.PI;
 import static java.lang.Math.max;
@@ -104,7 +105,7 @@ public abstract class CatalogClient <
       tables.add(TableIdentifier.of(Namespace.empty(), genTableName()));
     }
 
-    return tables.stream().toList();
+    return new ArrayList<>(tables);
   }
 
   protected void init_all_tables(){
