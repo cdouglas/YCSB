@@ -78,12 +78,12 @@ public abstract class CatalogClient <
     return new File(location);
   }
 
-  protected String warehouse = "gs://benchmarking-ycsb/" + RandomStringUtils.randomAlphanumeric(8);
-  final String gs_location = warehouse + "/catalog";
+  protected static final String warehouse = "gs://benchmarking-ycsb/" + RandomStringUtils.randomAlphanumeric(8);
+  protected static final String gs_location = warehouse + "/catalog";
 
-  final CatalogTransaction.IsolationLevel SSI = CatalogTransaction.IsolationLevel.SERIALIZABLE;
+  protected static final CatalogTransaction.IsolationLevel SSI = CatalogTransaction.IsolationLevel.SERIALIZABLE;
 
-  boolean  isMultiTable = true;
+  boolean isMultiTable = true;
 
   private Optional<TableIdentifier> getIdentifierFromTableName(String tableName){
     return catalog.listTables(Namespace.empty()).stream()
@@ -111,7 +111,9 @@ public abstract class CatalogClient <
   protected void init_all_tables(){
     for(int i = 0; i < NUM_TABLES; i++){
       TableIdentifier identifier = TableIdentifier.of(Namespace.empty(), Integer.toString(i));
-      catalog.createTable(identifier, SCHEMA, SPEC);
+      if(!catalog.tableExists(identifier)){
+        catalog.createTable(identifier, SCHEMA, SPEC);
+      }
     }
   }
 
@@ -165,7 +167,6 @@ public abstract class CatalogClient <
   @Override
   public Status update(String table, String key, Map<String, ByteIterator> values) {
     if(isMultiTable){
-      // we should add retry logic here.. right?
 
       CatalogTransaction catalogTransaction = ((C) catalog).createTransaction(SSI);
       Catalog txCatalog = catalogTransaction.asCatalog();

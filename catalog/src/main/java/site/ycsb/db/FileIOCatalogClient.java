@@ -28,6 +28,7 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
         catalog.initialize("YCSB-Bench", properties);
         init_all_tables();
       } catch (Exception e){
+        System.out.println(e.getLocalizedMessage());
         throw new DBException("Failed to load remote / init storage or catalog");
       }
 
