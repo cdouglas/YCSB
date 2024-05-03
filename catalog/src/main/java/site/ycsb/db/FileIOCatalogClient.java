@@ -25,8 +25,13 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
         final Map<String, String> properties = Maps.newHashMap();
         properties.put(CatalogProperties.WAREHOUSE_LOCATION, warehouse);
         catalog = new FileIOCatalog("test", gs_location, null, io, Maps.newHashMap());
-        catalog.initialize("YCSB-Bench", properties);
-        init_all_tables();
+        initLock.lock();
+        if(!catalogInited) {
+          catalog.initialize("YCSB-Bench", properties);
+          init_all_tables();
+          catalogInited = true;
+        }
+        initLock.unlock();
       } catch (Exception e){
         System.out.println(e.getLocalizedMessage());
         throw new DBException("Failed to load remote / init storage or catalog");

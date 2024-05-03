@@ -109,12 +109,10 @@ public abstract class CatalogClient <
     return new ArrayList<>(tables);
   }
 
-  private final static ReentrantLock initTablesLock = new ReentrantLock();
-  private static boolean tablesCreated = false;
+  protected final static ReentrantLock initLock = new ReentrantLock();
+  protected static boolean catalogInited = false;
 
   protected void init_all_tables(){
-    initTablesLock.lock();
-    if(!tablesCreated){
       for(int i = 0; i < NUM_TABLES; i++){
         TableIdentifier identifier = TableIdentifier.of(Namespace.empty(), Integer.toString(i));
         try {Thread.sleep(100);} catch (Exception ignored){};
@@ -122,9 +120,6 @@ public abstract class CatalogClient <
           catalog.createTable(identifier, SCHEMA, SPEC);
         }
       }
-      tablesCreated = true;
-    }
-    initTablesLock.unlock();
   }
 
   private final int NUM_TABLES = 20;
@@ -180,7 +175,7 @@ public abstract class CatalogClient <
   public Status update(String table, String key, Map<String, ByteIterator> values) {
     if(isMultiTable){
       var a = getTxTables();
-      int tries = 0;
+      int attempts = 0;
       System.out.println("Tables Involved: " + a.toString());
       while(true) {
         try {
@@ -204,10 +199,11 @@ public abstract class CatalogClient <
           System.out.println("Retrying TX (Rate Limited): "  + a.toString());
         }
 
-        //TODO maybe we add more up-to-date expo backoff? I know there are some randomized approaches
-
-        try{Thread.sleep((long) (100 * Math.pow(2, tries+1)));} catch (Exception ignored){};
-        tries += 1;
+        //Full-jitter backoff
+        double temperature = 400 * Math.pow(2, attempts);
+        double fullJitterSleep =  Math.random() * temperature; // E[sleep] = 200*2^a
+        try{Thread.sleep((long) fullJitterSleep);} catch (Exception ignored){};
+        attempts += 1;
       }
 
     } else {
