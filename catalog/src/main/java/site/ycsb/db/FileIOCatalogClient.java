@@ -28,7 +28,7 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
         initLock.lock();
         if(!catalogInited) {
           catalog.initialize("YCSB-Bench", properties);
-          init_all_tables();
+          initTables();
           catalogInited = true;
         }
         initLock.unlock();

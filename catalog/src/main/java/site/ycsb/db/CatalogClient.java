@@ -3,6 +3,7 @@ package site.ycsb.db;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageException;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.commons.lang3.exception.UncheckedException;
 import org.apache.iceberg.*;
 import org.apache.iceberg.catalog.*;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
@@ -84,7 +85,7 @@ public abstract class CatalogClient <
 
   protected static final CatalogTransaction.IsolationLevel SSI = CatalogTransaction.IsolationLevel.SERIALIZABLE;
 
-  boolean isMultiTable = true;
+  boolean isMultiTable = false;
 
   private Optional<TableIdentifier> getIdentifierFromTableName(String tableName){
     return catalog.listTables(Namespace.empty()).stream()
@@ -112,7 +113,7 @@ public abstract class CatalogClient <
   protected final static ReentrantLock initLock = new ReentrantLock();
   protected static boolean catalogInited = false;
 
-  protected void init_all_tables(){
+  protected void initTables(){
       for(int i = 0; i < NUM_TABLES; i++){
         TableIdentifier identifier = TableIdentifier.of(Namespace.empty(), Integer.toString(i));
         try {Thread.sleep(100);} catch (Exception ignored){};
@@ -173,30 +174,41 @@ public abstract class CatalogClient <
    */
   @Override
   public Status update(String table, String key, Map<String, ByteIterator> values) {
-    if(isMultiTable){
-      var a = getTxTables();
-      int attempts = 0;
-      System.out.println("Tables Involved: " + a.toString());
+
+    String txId = RandomStringUtils.randomAlphanumeric(8);
+    var tablesUtilized = getTxTables();
+    int attempts = 0;
+
+    System.out.println(txId + ") Tables Involved: " + (isMultiTable ?  tablesUtilized.toString() : "[default]"));
+
       while(true) {
+
         try {
-          CatalogTransaction catalogTransaction = ((C) catalog).createTransaction(SSI);
-          Catalog txCatalog = catalogTransaction.asCatalog();
-          for (TableIdentifier t : a) {
-            txCatalog.loadTable(t).newFastAppend().appendFile(FILE_A);
+          if(isMultiTable){
+            CatalogTransaction catalogTransaction = ((C) catalog).createTransaction(SSI);
+            Catalog txCatalog = catalogTransaction.asCatalog();
+            for (TableIdentifier t : tablesUtilized) {
+              txCatalog.loadTable(t).newFastAppend().appendFile(FILE_A);
+            }
+            catalogTransaction.commitTransaction();
+          } else {
+            var tid = TableIdentifier.of(Namespace.empty(), key);
+            var tx = catalog.buildTable(tid, SCHEMA).createOrReplaceTransaction();
+            values.forEach((k, v) -> tx.updateProperties().set(k, v.toString()));
           }
 
-          catalogTransaction.commitTransaction();
-          System.out.println("Commited TX: "  + a.toString());
+          System.out.println(txId + ") Committed");
 
           return Status.OK;
+
         } catch (CommitFailedException e){
-          System.out.println("Retrying TX (CAS): "  + a.toString());
+          System.out.println(txId + ") Retrying TX (CAS)");
         } catch (ValidationException e){
-          System.out.println("Retrying TX (SSI Validation): "  + a.toString());
+          System.out.println(txId + ") Retrying TX (SSI Validation): "  + tablesUtilized.toString());
         } catch (java.io.UncheckedIOException e){
-          System.out.println("Retrying TX (Catalog Not Found?): "  + a.toString());
+          System.out.println(txId + ") Retrying TX (Catalog Not Found?): "  + tablesUtilized.toString());
         } catch (com.google.cloud.storage.StorageException e){
-          System.out.println("Retrying TX (Rate Limited): "  + a.toString());
+          System.out.println(txId + ") Retrying TX (Rate Limited)");
         }
 
         //Full-jitter backoff
@@ -206,16 +218,6 @@ public abstract class CatalogClient <
         attempts += 1;
       }
 
-    } else {
-      var tid = TableIdentifier.of(Namespace.empty(), key);
-      try {
-        var tx = catalog.buildTable(tid, SCHEMA).createOrReplaceTransaction();
-        values.forEach((k, v) -> tx.updateProperties().set(k, v.toString()));
-      } catch (CommitFailedException e) {
-        return Status.ERROR;
-      }
-      return Status.OK;
-    }
   }
 
   /**
@@ -229,20 +231,39 @@ public abstract class CatalogClient <
    */
   @Override
   public Status insert(String table, String key, Map<String, ByteIterator> values){
-    if(isMultiTable){
-      // we assume all tables are already inserted, MTT overhead in updating metadata as simulated above
-      return Status.OK;
-    } else {
-      var tid = TableIdentifier.of(Namespace.empty(), key);
+    // We don't seem to be using this in the benchmark...?
+    if(isMultiTable)
+      return Status.NOT_IMPLEMENTED;
+
+    String txId = RandomStringUtils.randomAlphanumeric(8);
+    var tid = TableIdentifier.of(Namespace.empty(), key);
+    int attempts = 0;
+
+    System.out.println(txId + ") Adding Table: " );
+
+    while(true) {
       try {
+
         catalog.newCreateTableTransaction(tid, SCHEMA).commitTransaction();
-      } catch (CommitFailedException e) {
-        return Status.ERROR;
-      } catch (AlreadyExistsException e) {
+        return Status.OK;
+
+      } catch (AlreadyExistsException e){
         return Status.BAD_REQUEST;
+      } catch (CommitFailedException e){
+        System.out.println(txId + ") Retrying TX (CAS)");
+      } catch (java.io.UncheckedIOException e){
+        System.out.println(txId + ") Retrying TX (Catalog Not Found?)");
+      } catch (com.google.cloud.storage.StorageException e){
+        System.out.println(txId + ") Retrying TX (Rate Limited)");
       }
-      return Status.OK;
+
+      //Full-jitter backoff
+      double temperature = 400 * Math.pow(2, attempts);
+      double fullJitterSleep =  Math.random() * temperature; // E[sleep] = 200*2^a
+      try{Thread.sleep((long) fullJitterSleep);} catch (Exception ignored){};
+      attempts += 1;
     }
+
   }
 
   /**
@@ -254,14 +275,34 @@ public abstract class CatalogClient <
    */
   @Override
   public Status delete(String table, String key){
-    Optional<TableIdentifier> tblIdentifier = getIdentifierFromTableName(table);
-    if (!tblIdentifier.isPresent()) {
-      return Status.BAD_REQUEST;
-    }
-    if (!catalog.dropTable(tblIdentifier.get())) {
-      return Status.ERROR;
-    }
-    return Status.OK;
+    return Status.NOT_IMPLEMENTED;
+    // I don't really know what we want down here now. Are we even using deletes...?
+//    String txId = RandomStringUtils.randomAlphanumeric(8);
+//    Optional<TableIdentifier> tblIdentifier = getIdentifierFromTableName(table);
+//    if (tblIdentifier.isEmpty()) {
+//      return Status.BAD_REQUEST;
+//    }
+//    int attempts = 0;
+//
+//    System.out.println(txId + ") Adding Table: " );
+//
+//    while(true) {
+//      try {
+//
+//        if (catalog.dropTable(tblIdentifier.get())) {
+//          return Status.OK;
+//        }
+//
+//      } catch (com.google.cloud.storage.StorageException e){
+//        System.out.println(txId + ") Retrying TX (Rate Limited)");
+//      }
+//
+//      //Full-jitter backoff
+//      double temperature = 400 * Math.pow(2, attempts);
+//      double fullJitterSleep =  Math.random() * temperature; // E[sleep] = 200*2^a
+//      try{Thread.sleep((long) fullJitterSleep);} catch (Exception ignored){};
+//      attempts += 1;
+//    }
   }
 
 }
