@@ -15,9 +15,7 @@ import site.ycsb.generator.ZipfianGenerator;
 
 import java.io.File;
 import java.util.*;
-import java.util.stream.Collectors;
 
-import static java.lang.Math.PI;
 import static java.lang.Math.max;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.apache.iceberg.types.Types.*;
@@ -111,6 +109,7 @@ public abstract class CatalogClient <
   protected void init_all_tables(){
     for(int i = 0; i < NUM_TABLES; i++){
       TableIdentifier identifier = TableIdentifier.of(Namespace.empty(), Integer.toString(i));
+      try {Thread.sleep(100);} catch (Exception ignored){};
       if(!catalog.tableExists(identifier)){
         catalog.createTable(identifier, SCHEMA, SPEC);
       }
