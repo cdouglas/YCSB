@@ -1,6 +1,7 @@
 package site.ycsb.db;
 
 import com.google.cloud.storage.Storage;
+import com.google.cloud.storage.StorageException;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.iceberg.*;
 import org.apache.iceberg.catalog.*;
@@ -18,6 +19,7 @@ import java.io.File;
 import java.util.*;
 
 import static java.lang.Math.max;
+import static java.lang.Math.min;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.apache.iceberg.types.Types.*;
 
@@ -96,7 +98,7 @@ public abstract class CatalogClient <
 
   private List<TableIdentifier> getTxTables(){
 
-    int tablesToUse =  max(1, eGen.nextValue().intValue());
+    int tablesToUse =  min(max(1, eGen.nextValue().intValue()), MAX_TABLES_PER_TX);
 
     HashSet<TableIdentifier> tables = new HashSet<>();
 
@@ -126,8 +128,10 @@ public abstract class CatalogClient <
   }
 
   private final int NUM_TABLES = 20;
+  private final int MAX_TABLES_PER_TX = 8;
+
   private final ZipfianGenerator zGen = new ZipfianGenerator(NUM_TABLES);
-  private final ExponentialGenerator eGen = new ExponentialGenerator(2);
+  private final ExponentialGenerator eGen = new ExponentialGenerator(1.6);
 
   @Override
   abstract public void init() throws DBException;
@@ -176,22 +180,14 @@ public abstract class CatalogClient <
   public Status update(String table, String key, Map<String, ByteIterator> values) {
     if(isMultiTable){
       var a = getTxTables();
+      int tries = 0;
       System.out.println("Tables Involved: " + a.toString());
       while(true) {
         try {
           CatalogTransaction catalogTransaction = ((C) catalog).createTransaction(SSI);
           Catalog txCatalog = catalogTransaction.asCatalog();
           for (TableIdentifier t : a) {
-            switch (t.hashCode() % 3) {
-              case 0:
-                txCatalog.loadTable(t).newFastAppend().appendFile(FILE_A).appendFile(FILE_B).commit();
-              case 1:
-                txCatalog.loadTable(t).newDelete().deleteFile(FILE_C).commit();
-                txCatalog.loadTable(t).newFastAppend().appendFile(FILE_B).appendFile(FILE_C).commit();
-              case 2:
-                txCatalog.loadTable(t).newDelete().deleteFile(FILE_A).commit();
-                txCatalog.loadTable(t).newAppend().appendFile(FILE_D).commit();
-            }
+            txCatalog.loadTable(t).newFastAppend().appendFile(FILE_A);
           }
 
           catalogTransaction.commitTransaction();
@@ -202,7 +198,16 @@ public abstract class CatalogClient <
           System.out.println("Retrying TX (CAS): "  + a.toString());
         } catch (ValidationException e){
           System.out.println("Retrying TX (SSI Validation): "  + a.toString());
+        } catch (java.io.UncheckedIOException e){
+          System.out.println("Retrying TX (Catalog Not Found?): "  + a.toString());
+        } catch (com.google.cloud.storage.StorageException e){
+          System.out.println("Retrying TX (Rate Limited): "  + a.toString());
         }
+
+        //TODO maybe we add more up-to-date expo backoff? I know there are some randomized approaches
+
+        try{Thread.sleep((long) (100 * Math.pow(2, tries+1)));} catch (Exception ignored){};
+        tries += 1;
       }
 
     } else {
