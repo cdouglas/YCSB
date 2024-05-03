@@ -13,6 +13,7 @@ import site.ycsb.Status;
 import site.ycsb.generator.ExponentialGenerator;
 import site.ycsb.generator.ZipfianGenerator;
 import java.util.concurrent.locks.ReentrantLock;
+import org.apache.iceberg.exceptions.ValidationException;
 import java.io.File;
 import java.util.*;
 
@@ -174,25 +175,35 @@ public abstract class CatalogClient <
   @Override
   public Status update(String table, String key, Map<String, ByteIterator> values) {
     if(isMultiTable){
-
-      CatalogTransaction catalogTransaction = ((C) catalog).createTransaction(SSI);
-      Catalog txCatalog = catalogTransaction.asCatalog();
       var a = getTxTables();
       System.out.println("Tables Involved: " + a.toString());
-      for(TableIdentifier t : a) {
-        switch (t.hashCode() % 3){
-          case 0:
-            txCatalog.loadTable(t).newFastAppend().appendFile(FILE_A).appendFile(FILE_B).commit();
-          case 1:
-            txCatalog.loadTable(t).newDelete().deleteFile(FILE_C).commit();
-            txCatalog.loadTable(t).newFastAppend().appendFile(FILE_B).appendFile(FILE_C).commit();
-          case 2:
-            txCatalog.loadTable(t).newDelete().deleteFile(FILE_A).commit();
-            txCatalog.loadTable(t).newAppend().appendFile(FILE_D).commit();
+      while(true) {
+        try {
+          CatalogTransaction catalogTransaction = ((C) catalog).createTransaction(SSI);
+          Catalog txCatalog = catalogTransaction.asCatalog();
+          for (TableIdentifier t : a) {
+            switch (t.hashCode() % 3) {
+              case 0:
+                txCatalog.loadTable(t).newFastAppend().appendFile(FILE_A).appendFile(FILE_B).commit();
+              case 1:
+                txCatalog.loadTable(t).newDelete().deleteFile(FILE_C).commit();
+                txCatalog.loadTable(t).newFastAppend().appendFile(FILE_B).appendFile(FILE_C).commit();
+              case 2:
+                txCatalog.loadTable(t).newDelete().deleteFile(FILE_A).commit();
+                txCatalog.loadTable(t).newAppend().appendFile(FILE_D).commit();
+            }
+          }
+
+          catalogTransaction.commitTransaction();
+          System.out.println("Commited TX: "  + a.toString());
+
+          return Status.OK;
+        } catch (CommitFailedException e){
+          System.out.println("Retrying TX (CAS): "  + a.toString());
+        } catch (ValidationException e){
+          System.out.println("Retrying TX (SSI Validation): "  + a.toString());
         }
       }
-
-      catalogTransaction.commitTransaction();
 
     } else {
       var tid = TableIdentifier.of(Namespace.empty(), key);
@@ -202,8 +213,8 @@ public abstract class CatalogClient <
       } catch (CommitFailedException e) {
         return Status.ERROR;
       }
-    }
       return Status.OK;
+    }
   }
 
   /**
