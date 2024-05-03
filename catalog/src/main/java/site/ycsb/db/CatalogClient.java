@@ -107,7 +107,7 @@ public abstract class CatalogClient <
     return tables.stream().toList();
   }
 
-  private void init_all_tables(){
+  protected void init_all_tables(){
     for(int i = 0; i < NUM_TABLES; i++){
       TableIdentifier identifier = TableIdentifier.of(Namespace.empty(), Integer.toString(i));
       catalog.createTable(identifier, SCHEMA, SPEC);
@@ -168,7 +168,9 @@ public abstract class CatalogClient <
 
       CatalogTransaction catalogTransaction = ((C) catalog).createTransaction(SSI);
       Catalog txCatalog = catalogTransaction.asCatalog();
-      for(TableIdentifier t : getTxTables()){
+      var a = getTxTables();
+      System.out.println("Tables Involved: " + a.toString());
+      for(TableIdentifier t : a) {
         switch (t.hashCode() % 3){
           case 0:
             txCatalog.loadTable(t).newFastAppend().appendFile(FILE_A).appendFile(FILE_B).commit();

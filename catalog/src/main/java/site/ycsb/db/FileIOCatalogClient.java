@@ -15,22 +15,21 @@ import java.util.Map;
 public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
   @Override
   public void init() throws DBException {
-      System.out.println("Big boy");
-      try (FileInputStream credentials = new FileInputStream(credentials())) {
+    try (FileInputStream credentials = new FileInputStream(credentials())) {
         storage = RemoteStorageHelper.create("lst-consistency", credentials).getOptions().getService();
       } catch (Exception e){
         throw new DBException("Failed to load credentials");
       }
-
       try {
         GCSFileIO io = new GCSFileIO(() -> storage, new GCPProperties());
         final Map<String, String> properties = Maps.newHashMap();
         properties.put(CatalogProperties.WAREHOUSE_LOCATION, warehouse);
         catalog = new FileIOCatalog("test", gs_location, null, io, Maps.newHashMap());
         catalog.initialize("YCSB-Bench", properties);
-
+        init_all_tables();
       } catch (Exception e){
         throw new DBException("Failed to load remote / init storage or catalog");
       }
+
   }
 }
