@@ -12,7 +12,7 @@ import site.ycsb.DBException;
 import site.ycsb.Status;
 import site.ycsb.generator.ExponentialGenerator;
 import site.ycsb.generator.ZipfianGenerator;
-
+import java.util.concurrent.locks.ReentrantLock;
 import java.io.File;
 import java.util.*;
 
@@ -106,14 +106,22 @@ public abstract class CatalogClient <
     return new ArrayList<>(tables);
   }
 
+  private final static ReentrantLock initTablesLock = new ReentrantLock();
+  private static boolean tablesCreated = false;
+
   protected void init_all_tables(){
-    for(int i = 0; i < NUM_TABLES; i++){
-      TableIdentifier identifier = TableIdentifier.of(Namespace.empty(), Integer.toString(i));
-      try {Thread.sleep(100);} catch (Exception ignored){};
-      if(!catalog.tableExists(identifier)){
-        catalog.createTable(identifier, SCHEMA, SPEC);
+    initTablesLock.lock();
+    if(!tablesCreated){
+      for(int i = 0; i < NUM_TABLES; i++){
+        TableIdentifier identifier = TableIdentifier.of(Namespace.empty(), Integer.toString(i));
+        try {Thread.sleep(100);} catch (Exception ignored){};
+        if(!catalog.tableExists(identifier)){
+          catalog.createTable(identifier, SCHEMA, SPEC);
+        }
       }
+      tablesCreated = true;
     }
+    initTablesLock.unlock();
   }
 
   private final int NUM_TABLES = 20;
