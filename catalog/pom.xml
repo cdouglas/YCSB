@@ -30,7 +30,7 @@
     <!--    feel free to update these back to what they were -->
     <checkstyle.skip>true</checkstyle.skip>
     <hadoop.version>3.3.6</hadoop.version>
-    <iceberg.local_version>cfe6e51</iceberg.local_version>
+    <iceberg.local_version>1.6.1-LSTSNAPSHOT</iceberg.local_version>
     <iceberg.maven_version>1.5.0</iceberg.maven_version>
   </properties>
 
@@ -64,7 +64,7 @@
     <dependency>
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-common</artifactId>
-      <version>${iceberg.maven_version}</version>
+      <version>${iceberg.local_version}</version>
       <scope>runtime</scope>
     </dependency>
     <dependency>
