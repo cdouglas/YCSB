@@ -1,17 +1,19 @@
 package site.ycsb.db;
 
 
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.CatalogUtil;
-import org.apache.iceberg.io.FileIOCatalog;
 import org.apache.iceberg.jdbc.JdbcCatalog;
 import site.ycsb.DBException;
 
 import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 
 public class JDBCCatalogClient extends CatalogClient<JdbcCatalog> {
+
+  protected static final String warehouse = "gs://benchmarking-ycsb/" + RandomStringUtils.randomAlphanumeric(8);
+  protected static final String gs_location = warehouse + "/catalog";
 
   @Override
   public void init() throws DBException {

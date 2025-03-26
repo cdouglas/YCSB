@@ -31,11 +31,26 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
 
   private static String WAREHOUSE_LOCATION;
 
+  private final String FILEIO_STORE = "fileio.store";
+
   @Override
   public void init() throws DBException {
     try {
       final Map<String, String> properties = Maps.newHashMap();
-      SupportsAtomicOperations io = s3FileIO(properties); // gcsFileIO(properties);
+      final SupportsAtomicOperations io;
+        Object o = getProperties().get(FILEIO_STORE);
+        if ("s3".equals(o)) {
+          io = s3FileIO(properties);
+          System.out.println("### S3 ###");
+        } else if ("gcs".equals(o)) {
+          io = gcsFileIO(properties);
+          System.out.println("### GCS ###");
+        } else if ("azure".equals(o)) {
+          io = azureFileIO(properties);
+          System.out.println("### AZURE ###");
+        } else {
+            throw new IllegalArgumentException("Unknown fileio object: " + getProperties().get(FILEIO_STORE));
+        }
       final String catalogLoc = WAREHOUSE_LOCATION + "/catalog";
       logger.info("WAREHOUSE: {}", WAREHOUSE_LOCATION);
       synchronized (FileIOCatalogClient.class) {

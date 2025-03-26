@@ -1,18 +1,18 @@
 package site.ycsb.db;
 
 
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.iceberg.BaseMetastoreCatalog;
 import org.apache.iceberg.hadoop.HadoopCatalog;
-import org.apache.iceberg.io.FileIOCatalog;
 import site.ycsb.DBException;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
-import java.util.Map;
 
 public class HadoopCatalogClient extends CatalogClient<HadoopCatalog> {
+
+  protected static final String warehouse = "gs://benchmarking-ycsb/" + RandomStringUtils.randomAlphanumeric(8);
+  protected static final String gs_location = warehouse + "/catalog";
 
   final File credentials() {
     // https://cloud.google.com/docs/authentication/provide-credentials-adc#local-dev

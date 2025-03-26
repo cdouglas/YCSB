@@ -1,13 +1,18 @@
 package site.ycsb.db;
 
-import com.google.cloud.storage.Storage;
-import com.google.cloud.storage.StorageException;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.commons.lang3.exception.UncheckedException;
-import org.apache.iceberg.*;
-import org.apache.iceberg.catalog.*;
+import org.apache.iceberg.DataFile;
+import org.apache.iceberg.DataFiles;
+import org.apache.iceberg.PartitionSpec;
+import org.apache.iceberg.Schema;
+import org.apache.iceberg.catalog.Catalog;
+import org.apache.iceberg.catalog.CatalogTransaction;
+import org.apache.iceberg.catalog.Namespace;
+import org.apache.iceberg.catalog.SupportsCatalogTransactions;
+import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.CommitFailedException;
+import org.apache.iceberg.exceptions.ValidationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import site.ycsb.ByteIterator;
@@ -16,15 +21,22 @@ import site.ycsb.DBException;
 import site.ycsb.Status;
 import site.ycsb.generator.ExponentialGenerator;
 import site.ycsb.generator.ZipfianGenerator;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.Vector;
 import java.util.concurrent.locks.ReentrantLock;
-import org.apache.iceberg.exceptions.ValidationException;
-import java.io.File;
-import java.util.*;
 
 import static java.lang.Math.max;
 import static java.lang.Math.min;
+import static org.apache.iceberg.types.Types.IntegerType;
 import static org.apache.iceberg.types.Types.NestedField.required;
-import static org.apache.iceberg.types.Types.*;
+import static org.apache.iceberg.types.Types.StringType;
 
 public abstract class CatalogClient <C extends Catalog> extends DB {
 
@@ -81,8 +93,6 @@ public abstract class CatalogClient <C extends Catalog> extends DB {
 
   static final String YCSB_BUCKET = "lst-consistency/YCSB";
   static final String UNIQ_RUN = RandomStringUtils.randomAlphanumeric(8);
-  protected static final String warehouse = "gs://benchmarking-ycsb/" + RandomStringUtils.randomAlphanumeric(8);
-  protected static final String gs_location = warehouse + "/catalog";
   protected static final CatalogTransaction.IsolationLevel SSI = CatalogTransaction.IsolationLevel.SERIALIZABLE;
 
   boolean isMultiTable = false;
