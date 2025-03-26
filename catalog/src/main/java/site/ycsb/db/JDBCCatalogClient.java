@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-public class JDBCCatalogClient extends CatalogClient<FileIOCatalog> {
+public class JDBCCatalogClient extends CatalogClient<JdbcCatalog> {
 
   @Override
   public void init() throws DBException {

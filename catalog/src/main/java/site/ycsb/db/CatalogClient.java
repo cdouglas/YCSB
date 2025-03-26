@@ -8,6 +8,8 @@ import org.apache.iceberg.*;
 import org.apache.iceberg.catalog.*;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.CommitFailedException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
@@ -24,11 +26,20 @@ import static java.lang.Math.min;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.apache.iceberg.types.Types.*;
 
-public abstract class CatalogClient <
-    C extends SupportsCatalogTransactions & SupportsNamespaces & Catalog> extends DB {
+public abstract class CatalogClient <C extends Catalog> extends DB {
 
-  protected Catalog catalog;
-  protected Storage storage;
+  private static final Logger LOG = LoggerFactory.getLogger(CatalogClient.class);
+
+  protected final static ReentrantLock initLock = new ReentrantLock();
+  protected static boolean catalogInited = false;
+
+  protected C catalog;
+
+  private final int NUM_TABLES = 20;
+  private final int MAX_TABLES_PER_TX = 8;
+
+  private final ZipfianGenerator zGen = new ZipfianGenerator(NUM_TABLES);
+  private final ExponentialGenerator eGen = new ExponentialGenerator(1.6);
 
   static final Schema SCHEMA =
       new Schema(
@@ -68,21 +79,10 @@ public abstract class CatalogClient <
           .withRecordCount(1)
           .build();
 
-  final File credentials() {
-    // https://cloud.google.com/docs/authentication/provide-credentials-adc#local-dev
-    String location = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
-    if (null == location) {
-      location = getProperties().getProperty("gcp.creds");
-    }
-    if (null == location) {
-      throw new IllegalArgumentException("Missing credential location");
-    }
-    return new File(location);
-  }
-
+  static final String YCSB_BUCKET = "lst-consistency/YCSB";
+  static final String UNIQ_RUN = RandomStringUtils.randomAlphanumeric(8);
   protected static final String warehouse = "gs://benchmarking-ycsb/" + RandomStringUtils.randomAlphanumeric(8);
   protected static final String gs_location = warehouse + "/catalog";
-
   protected static final CatalogTransaction.IsolationLevel SSI = CatalogTransaction.IsolationLevel.SERIALIZABLE;
 
   boolean isMultiTable = false;
@@ -94,44 +94,36 @@ public abstract class CatalogClient <
   }
 
   private String genTableName(){
-    return  zGen.nextValue().toString();
+    return zGen.nextValue().toString();
   }
 
   private List<TableIdentifier> getTxTables(){
-
     int tablesToUse =  min(max(1, eGen.nextValue().intValue()), MAX_TABLES_PER_TX);
-
     HashSet<TableIdentifier> tables = new HashSet<>();
-
-    while(tables.size() < tablesToUse){
+    while (tables.size() < tablesToUse) {
       tables.add(TableIdentifier.of(Namespace.empty(), genTableName()));
     }
-
     return new ArrayList<>(tables);
   }
 
-  protected final static ReentrantLock initLock = new ReentrantLock();
-  protected static boolean catalogInited = false;
-
-  protected void initTables(){
-      for(int i = 0; i < NUM_TABLES; i++){
-        TableIdentifier identifier = TableIdentifier.of(Namespace.empty(), Integer.toString(i));
-        try {Thread.sleep(100);} catch (Exception ignored){};
-        if(!catalog.tableExists(identifier)){
-          catalog.createTable(identifier, SCHEMA, SPEC);
-        }
+  protected synchronized void initTables() {
+    if (catalogInited) {
+      LOG.info("Catalog already initialized");
+      return;
+    }
+    for (int i = 0; i < NUM_TABLES; i++) {
+      TableIdentifier identifier = TableIdentifier.of(Namespace.empty(), Integer.toString(i));
+      try {Thread.sleep(100);} catch (Exception ignored){};
+      if(!catalog.tableExists(identifier)){
+        LOG.info("Init table: " + identifier);
+        catalog.createTable(identifier, SCHEMA, SPEC);
       }
+    }
+    catalogInited = true;
   }
-
-  private final int NUM_TABLES = 20;
-  private final int MAX_TABLES_PER_TX = 8;
-
-  private final ZipfianGenerator zGen = new ZipfianGenerator(NUM_TABLES);
-  private final ExponentialGenerator eGen = new ExponentialGenerator(1.6);
 
   @Override
   abstract public void init() throws DBException;
-
 
   /**
    * Read a record from the database. Each field/value pair from the result will be stored in a HashMap.
@@ -159,7 +151,7 @@ public abstract class CatalogClient <
    */
   @Override
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
-                              Vector<HashMap<String, ByteIterator>> result){
+                              Vector<HashMap<String, ByteIterator>> result) {
     return Status.OK;
   }
 
@@ -181,11 +173,10 @@ public abstract class CatalogClient <
 
     System.out.println(txId + ") Tables Involved: " + (isMultiTable ?  tablesUtilized.toString() : "[default]"));
 
-      while(true) {
-
+      while (true) {
         try {
-          if(isMultiTable){
-            CatalogTransaction catalogTransaction = ((C) catalog).createTransaction(SSI);
+          if (isMultiTable) {
+            CatalogTransaction catalogTransaction = ((SupportsCatalogTransactions) catalog).createTransaction(SSI);
             Catalog txCatalog = catalogTransaction.asCatalog();
             for (TableIdentifier t : tablesUtilized) {
               txCatalog.loadTable(t).newFastAppend().appendFile(FILE_A);
@@ -214,7 +205,9 @@ public abstract class CatalogClient <
         //Full-jitter backoff
         double temperature = 400 * Math.pow(2, attempts);
         double fullJitterSleep =  Math.random() * temperature; // E[sleep] = 200*2^a
-        try{Thread.sleep((long) fullJitterSleep);} catch (Exception ignored){};
+        try {
+          Thread.sleep((long) fullJitterSleep);
+        } catch (Exception ignored){};
         attempts += 1;
       }
 
@@ -232,7 +225,7 @@ public abstract class CatalogClient <
   @Override
   public Status insert(String table, String key, Map<String, ByteIterator> values){
     // We don't seem to be using this in the benchmark...?
-    if(isMultiTable)
+    if (isMultiTable)
       return Status.NOT_IMPLEMENTED;
 
     String txId = RandomStringUtils.randomAlphanumeric(8);
@@ -245,6 +238,7 @@ public abstract class CatalogClient <
       try {
 
         catalog.newCreateTableTransaction(tid, SCHEMA).commitTransaction();
+        // catalog.createTable(tid, SCHEMA);
         return Status.OK;
 
       } catch (AlreadyExistsException e){
@@ -274,7 +268,7 @@ public abstract class CatalogClient <
    * @return The result of the operation.
    */
   @Override
-  public Status delete(String table, String key){
+  public Status delete(String table, String key) {
     return Status.NOT_IMPLEMENTED;
     // I don't really know what we want down here now. Are we even using deletes...?
 //    String txId = RandomStringUtils.randomAlphanumeric(8);
