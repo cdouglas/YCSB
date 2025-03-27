@@ -39,10 +39,10 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
       final Map<String, String> properties = Maps.newHashMap();
       final SupportsAtomicOperations io;
         Object o = getProperties().get(FILEIO_STORE);
-        if ("s3".equals(o)) {
+        if ("aws".equals(o)) {
           io = s3FileIO(properties);
           System.out.println("### S3 ###");
-        } else if ("gcs".equals(o)) {
+        } else if ("gcp".equals(o)) {
           io = gcsFileIO(properties);
           System.out.println("### GCS ###");
         } else if ("azure".equals(o)) {
