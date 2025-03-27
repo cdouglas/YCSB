@@ -67,13 +67,21 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
   }
 
   static ADLSFileIO azureFileIO(Map<String,String> properties) {
-    AzureSAS creds =
-        AzureSAS.readCreds(new File("/home/chris/work/.cloud/azure/lstnsgym-20250930.json"));
-    Map<String, String> azureProperties = new HashMap<>();
-    azureProperties.put(
-        AzureProperties.ADLS_SAS_TOKEN_PREFIX + "lstnsgym.dfs.core.windows.net", creds.sasToken);
+    final File credFile = new File("/home/chris/work/.cloud/azure/lstnsgym-20250930.json");
+    final LocationResolver az;
+    final Map<String, String> azureProperties = new HashMap<>();
+    if (credFile.exists()) {
+      AzureSAS creds =
+              AzureSAS.readCreds(credFile);
+      azureProperties.put(
+              AzureProperties.ADLS_SAS_TOKEN_PREFIX + "lstnsgym.dfs.core.windows.net", creds.sasToken);
 
-    LocationResolver az = new AzureSAS.SasResolver(creds);
+      az = new AzureSAS.SasResolver(creds);
+    } else {
+      String accountName = System.getenv("AZURE_STORAGE_ACCOUNT");
+      String containerName = System.getenv("AZURE_STORAGE_CONTAINER");
+      az = new HackOnAHack(accountName, containerName);
+    }
     WAREHOUSE_LOCATION = az.location(YCSB_BUCKET + "/" + UNIQ_RUN);
     properties.put(CatalogProperties.WAREHOUSE_LOCATION, WAREHOUSE_LOCATION);
 
