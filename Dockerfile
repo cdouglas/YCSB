@@ -36,8 +36,13 @@ RUN curl -sL https://aka.ms/downloadazcopy-v10-linux | tar -xz -C /opt && \
     mv /opt/azcopy_linux_amd64*/azcopy /usr/bin/azcopy && \
     chmod +x /usr/bin/azcopy
 
-# Copy project files and script
+# Copy all project files EXCEPT the large, frequently-changing Iceberg snapshot JARs
 COPY . /YCSB
+RUN find /YCSB/catalog/target/dependency -name 'iceberg-*-1.6.1-LSTSNAPSHOT.jar' -delete || true
+
+# Add iceberg snapshot JARs in a separate layer for better caching
+COPY catalog/target/dependency/iceberg-*-1.6.1-LSTSNAPSHOT.jar /YCSB/catalog/target/dependency/
+
 WORKDIR /YCSB
 
 # Make sure script is executable
@@ -45,4 +50,3 @@ RUN chmod +x /YCSB/bin/lst.sh
 
 # Entry point to benchmark runner
 ENTRYPOINT ["/bin/bash", "bin/lst.sh"]
-
