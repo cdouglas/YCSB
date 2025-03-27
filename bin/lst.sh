@@ -9,19 +9,21 @@ CLOUD="${1:-}"
 THREAD_RANGE="${2:-1..16}"
 SKIP_UPLOAD=false
 
-if [[ -n "$1" || -n "$2" ]]; then
+# If CLOUD or THREAD_RANGE were passed explicitly, skip upload
+if [[ -n "${1-}" || -n "${2-}" ]]; then
   SKIP_UPLOAD=true
 fi
 
+# Try to auto-detect if not provided
 if [[ -z "$CLOUD" ]]; then
   if curl -s -H Metadata:true "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | grep -q "compute"; then
-    echo "☕️ Detected Azure"
+    echo "☁️ Detected Azure"
     CLOUD="azure"
   elif curl -s "http://169.254.169.254/latest/meta-data/" | grep -q "instance-id"; then
-    echo "☕️ Detected AWS"
+    echo "☁️ Detected AWS"
     CLOUD="aws"
   elif curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/" | grep -q "instance"; then
-    echo "☕️ Detected GCP"
+    echo "☁️ Detected GCP"
     CLOUD="gcp"
   else
     echo "⚠️ Cloud environment not detected and not specified."
@@ -51,11 +53,11 @@ done
 TARBALL="${CLOUD}_results_$(date +%s).tgz"
 BUCKET_PATH="benchmark-results/${TARBALL}"
 
-echo "📆 Compressing all results into $TARBALL..."
+echo "📦 Compressing all results into $TARBALL..."
 tar czf "$TARBALL" -C "$RESULTDIR" .
 
 if [ "$SKIP_UPLOAD" = true ]; then
-  echo "⏹ Upload skipped due to manual arguments."
+  echo "🚫 Upload skipped due to manual arguments."
   exit 0
 fi
 
@@ -79,9 +81,9 @@ upload_to_gcp() {
 echo "🚚 Uploading final results archive..."
 case $CLOUD in
   azure) upload_to_azure ;;
-  aws) upload_to_aws ;;
-  gcp) upload_to_gcp ;;
-  *) echo "❌ Unknown cloud environment. Skipping upload."; exit 1 ;;
+  aws)   upload_to_aws ;;
+  gcp)   upload_to_gcp ;;
+  *)     echo "⚠️ Unknown cloud environment. Skipping upload."; exit 1 ;;
 esac
 
 echo "✅ All benchmarks complete and uploaded!"
