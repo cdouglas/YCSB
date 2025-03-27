@@ -5,16 +5,16 @@ set -euo pipefail
 # export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
 
 # === Determine cloud environment and thread range ===
-CLOUD="${1:-}"
+CLOUD="${CLOUD:-${1:-}}"
 THREAD_RANGE="${2:-1..16}"
 SKIP_UPLOAD=false
 
-# If CLOUD or THREAD_RANGE were passed explicitly, skip upload
+# If args were passed explicitly, skip upload
 if [[ -n "${1-}" || -n "${2-}" ]]; then
   SKIP_UPLOAD=true
 fi
 
-# Try to auto-detect if not provided
+# Auto-detect cloud environment if not set
 if [[ -z "$CLOUD" ]]; then
   if curl -s -H Metadata:true "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | grep -q "compute"; then
     echo "☁️ Detected Azure"
@@ -26,8 +26,8 @@ if [[ -z "$CLOUD" ]]; then
     echo "☁️ Detected GCP"
     CLOUD="gcp"
   else
-    echo "⚠️ Cloud environment not detected and not specified."
-    CLOUD="unknown"
+    echo "❌ Could not detect or infer cloud environment. Please set CLOUD or pass it as the first argument."
+    exit 1
   fi
 fi
 
@@ -83,7 +83,7 @@ case $CLOUD in
   azure) upload_to_azure ;;
   aws)   upload_to_aws ;;
   gcp)   upload_to_gcp ;;
-  *)     echo "⚠️ Unknown cloud environment. Skipping upload."; exit 1 ;;
+  *)     echo "❌ Unknown cloud environment: $CLOUD"; exit 1 ;;
 esac
 
 echo "✅ All benchmarks complete and uploaded!"
