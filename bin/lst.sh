@@ -4,9 +4,14 @@ set -euo pipefail
 # Optional: enable remote debugging
 # export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
 
-# === Determine cloud environment (or use first arg) ===
+# === Determine cloud environment and thread range ===
 CLOUD="${1:-}"
 THREAD_RANGE="${2:-1..16}"
+SKIP_UPLOAD=false
+
+if [[ -n "$1" || -n "$2" ]]; then
+  SKIP_UPLOAD=true
+fi
 
 if [[ -z "$CLOUD" ]]; then
   if curl -s -H Metadata:true "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | grep -q "compute"; then
@@ -48,6 +53,11 @@ BUCKET_PATH="benchmark-results/${TARBALL}"
 
 echo "📆 Compressing all results into $TARBALL..."
 tar czf "$TARBALL" -C "$RESULTDIR" .
+
+if [ "$SKIP_UPLOAD" = true ]; then
+  echo "⏹ Upload skipped due to manual arguments."
+  exit 0
+fi
 
 # === Upload logic ===
 upload_to_azure() {
