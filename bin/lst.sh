@@ -4,21 +4,24 @@ set -euo pipefail
 # Optional: enable remote debugging
 # export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
 
-# === Detect cloud environment and set CLOUD ===
-CLOUD=""
+# === Determine cloud environment (or use first arg) ===
+CLOUD="${1:-}"
+THREAD_RANGE="${2:-1..16}"
 
-if curl -s -H Metadata:true "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | grep -q "compute"; then
-  echo "☕️ Detected Azure"
-  CLOUD="azure"
-elif curl -s "http://169.254.169.254/latest/meta-data/" | grep -q "instance-id"; then
-  echo "☕️ Detected AWS"
-  CLOUD="aws"
-elif curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/" | grep -q "instance"; then
-  echo "☕️ Detected GCP"
-  CLOUD="gcp"
-else
-  echo "⚠️ Cloud environment not detected."
-  CLOUD="unknown"
+if [[ -z "$CLOUD" ]]; then
+  if curl -s -H Metadata:true "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | grep -q "compute"; then
+    echo "☕️ Detected Azure"
+    CLOUD="azure"
+  elif curl -s "http://169.254.169.254/latest/meta-data/" | grep -q "instance-id"; then
+    echo "☕️ Detected AWS"
+    CLOUD="aws"
+  elif curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/" | grep -q "instance"; then
+    echo "☕️ Detected GCP"
+    CLOUD="gcp"
+  else
+    echo "⚠️ Cloud environment not detected and not specified."
+    CLOUD="unknown"
+  fi
 fi
 
 RESULTDIR=results
@@ -29,7 +32,7 @@ S3_BUCKET=casalog
 OUTDIR=$RESULTDIR/$CLOUD
 mkdir -p "$OUTDIR"
 
-for THREADS in {1..16}; do
+for THREADS in $(eval echo {$THREAD_RANGE}); do
   TESTNAME=${CLOUD}_${THREADS}
   echo "🚀 Running YCSB benchmark on ${CLOUD} with ${THREADS} threads..."
   ./bin/ycsb.sh run catalog-fileio -P workloads/lst \
@@ -38,7 +41,6 @@ for THREADS in {1..16}; do
     -p exportfile="${OUTDIR}/${TESTNAME}" \
     -threads ${THREADS} | tee ${OUTDIR}/${TESTNAME}_raw
   sleep 2
-
 done
 
 TARBALL="${CLOUD}_results_$(date +%s).tgz"
