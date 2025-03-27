@@ -27,7 +27,9 @@ resource "azurerm_public_ip" "ycsb" {
   name                = "ycsb-ip"
   location            = var.azure_region
   resource_group_name = azurerm_resource_group.ycsb.name
-  allocation_method   = "Dynamic"
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  sku_tier            = "Regional"
 }
 
 resource "azurerm_network_interface" "ycsb" {
@@ -90,22 +92,18 @@ resource "azurerm_linux_virtual_machine" "ycsb" {
   )
 }
 
-resource "azurerm_storage_account" "existing" {
-  name                     = var.storage_account_name
-  resource_group_name      = azurerm_resource_group.ycsb.name
-  location                 = var.azure_region
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-  allow_nested_items_to_be_public = false
-  is_hns_enabled           = false
+data "azurerm_storage_account" "existing" {
+  name                = var.storage_account_name
+  resource_group_name = var.storage_account_resource_group
 }
 
 resource "azurerm_role_assignment" "vm_blob_data_contributor" {
   principal_id         = azurerm_linux_virtual_machine.ycsb.identity[0].principal_id
   role_definition_name = "Storage Blob Data Contributor"
-  scope                = azurerm_storage_account.existing.id
+  scope                = data.azurerm_storage_account.existing.id
 }
 
 output "vm_ip" {
   value = azurerm_public_ip.ycsb.ip_address
 }
+
