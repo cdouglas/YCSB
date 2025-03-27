@@ -56,9 +56,13 @@ resource "azurerm_linux_virtual_machine" "ycsb" {
     public_key = file(var.ssh_public_key_path)
   }
 
-	boot_diagnostics {
-		storage_account_uri = null # auto-managed
-	}
+  identity {
+    type = "SystemAssigned"
+  }
+
+  boot_diagnostics {
+    storage_account_uri = null
+  }
 
   os_disk {
     caching              = "ReadWrite"
@@ -76,13 +80,32 @@ resource "azurerm_linux_virtual_machine" "ycsb" {
     #!/bin/bash
     apt-get update
     apt-get install -y docker.io
+    systemctl enable docker
     systemctl start docker
-    docker run --rm your-dockerhub-username/ycsb-iceberg-benchmark:latest
+    docker run --rm \
+      -e AZURE_STORAGE_ACCOUNT=${var.storage_account_name} \
+      -e AZURE_STORAGE_CONTAINER=${var.storage_container_name} \
+      ${var.docker_image}
   EOF
   )
+}
+
+resource "azurerm_storage_account" "existing" {
+  name                     = var.storage_account_name
+  resource_group_name      = azurerm_resource_group.ycsb.name
+  location                 = var.azure_region
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  allow_nested_items_to_be_public = false
+  is_hns_enabled           = false
+}
+
+resource "azurerm_role_assignment" "vm_blob_data_contributor" {
+  principal_id         = azurerm_linux_virtual_machine.ycsb.identity[0].principal_id
+  role_definition_name = "Storage Blob Data Contributor"
+  scope                = azurerm_storage_account.existing.id
 }
 
 output "vm_ip" {
   value = azurerm_public_ip.ycsb.ip_address
 }
-

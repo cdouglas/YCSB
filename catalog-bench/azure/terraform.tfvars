@@ -1,1 +1,5 @@
 ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+azure_region = "West US"
+docker_image = "cdouglas/catalog-bench:latest"
+storage_account_name="lstnsgym"
+storage_container_name="lst-ns-consistency"
