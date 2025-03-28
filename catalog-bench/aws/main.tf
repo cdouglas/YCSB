@@ -22,22 +22,31 @@ resource "aws_security_group" "ycsb" {
   }
 }
 
+// AMI from:
+// aws ec2 describe-images
+//   --owners 099720109477
+//   --filters "Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*" "Name=virtualization-type,Values=hvm" "Name=root-device-type,Values=ebs"
+//   --query 'Images[*].[ImageId,Name]'
+//   --region us-west-2
+//   --output table
+
+
 resource "aws_instance" "ycsb" {
-  ami                    = "ami-08c40ec9ead489470" # Ubuntu 20.04 for us-west-2 (update if needed)
+  ami                    = "ami-04f5a6a7ecc99fbe2" # Ubuntu 20.04 for us-west-2 (update if needed)
   instance_type          = "t3.micro"
   vpc_security_group_ids = [aws_security_group.ycsb.id]
 
   user_data = <<-EOF
     #!/bin/bash
-    apt-get update
-    apt-get install -y docker.io
-    systemctl enable docker
-    systemctl start docker
     useradd -m -s /bin/bash ${var.ssh_user}
     mkdir -p /home/${var.ssh_user}/.ssh
     echo "${file(var.ssh_public_key_path)}" > /home/${var.ssh_user}/.ssh/authorized_keys
     chown -R ${var.ssh_user}:${var.ssh_user} /home/${var.ssh_user}/.ssh
     chmod 600 /home/${var.ssh_user}/.ssh/authorized_keys
+    apt-get update
+    apt-get install -y docker.io
+    systemctl enable docker
+    systemctl start docker
     usermod -aG docker ${var.ssh_user}
     mkdir -p /mnt/results
 
@@ -47,7 +56,7 @@ resource "aws_instance" "ycsb" {
       -v /mnt/results:/YCSB/results \
       ${var.docker_image}
 
-    shutdown -h now
+    # shutdown -h now
   EOF
 
   tags = {
