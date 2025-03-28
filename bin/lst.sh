@@ -32,8 +32,8 @@ if [[ -z "$CLOUD" ]]; then
 fi
 
 RESULTDIR=results
-AZURE_BUCKET=lst_consistency
-GCP_BUCKET=lst_consistency
+AZURE_BUCKET=lst-consistency
+GCP_BUCKET=lst-consistency
 S3_BUCKET=casalog
 
 OUTDIR=$RESULTDIR/$CLOUD
