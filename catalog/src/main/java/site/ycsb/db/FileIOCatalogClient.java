@@ -27,7 +27,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
-  private static final Logger logger = LoggerFactory.getLogger(FormatClient.class);
+  private static final Logger logger = LoggerFactory.getLogger(FileIOCatalogClient.class);
 
   private static String WAREHOUSE_LOCATION;
 
@@ -78,6 +78,7 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
 
       az = new AzureSAS.SasResolver(creds);
     } else {
+      // TODO this is a dumb and lazy way to do this.
       String accountName = System.getenv("AZURE_STORAGE_ACCOUNT");
       String containerName = System.getenv("AZURE_STORAGE_CONTAINER");
       az = new HackOnAHack(accountName, containerName);
@@ -92,14 +93,19 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
 
   static GCSFileIO gcsFileIO(Map<String,String> properties) {
     final File credFile = new File("/home/chris/work/.cloud/gcp/lst-consistency-8dd2dfbea73a.json");
-    try (FileInputStream creds = new FileInputStream(credFile)) {
-      Storage storage = RemoteStorageHelper.create("lst-consistency", creds).getOptions().getService();
-      WAREHOUSE_LOCATION = "gs://" + YCSB_BUCKET + "/" + UNIQ_RUN;
-      properties.put(CatalogProperties.WAREHOUSE_LOCATION, WAREHOUSE_LOCATION);
-      return new GCSFileIO(() -> storage, new GCPProperties());
-    } catch (IOException e) {
-      throw new UncheckedIOException(e);
+    WAREHOUSE_LOCATION = "gs://" + YCSB_BUCKET + "/" + UNIQ_RUN;
+    properties.put(CatalogProperties.WAREHOUSE_LOCATION, WAREHOUSE_LOCATION);
+    if (credFile.exists()) {
+      try (FileInputStream creds = new FileInputStream(credFile)) {
+        Storage storage = RemoteStorageHelper.create("lst-consistency", creds).getOptions().getService();
+        return new GCSFileIO(() -> storage, new GCPProperties());
+      } catch (IOException e) {
+        throw new UncheckedIOException(e);
+      }
     }
+    final GCSFileIO ret = new GCSFileIO();
+    ret.initialize(properties);
+    return ret;
   }
 
   static S3FileIO s3FileIO(Map<String,String> properties) {

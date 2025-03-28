@@ -1,0 +1,6 @@
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+docker_image = "cdouglas/catalog-bench:latest"
+aws_profile="default"
+aws_region="us-west-2"
+s3_bucket_name="casalog"
+ssh_user="awsuser"
