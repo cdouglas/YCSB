@@ -3,6 +3,56 @@ provider "aws" {
   profile = var.aws_profile
 }
 
+# IAM Role for EC2 Instance
+resource "aws_iam_role" "ec2_role" {
+  name = "ycsb-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      },
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+# IAM Policy allowing S3 access
+resource "aws_iam_policy" "s3_policy" {
+  name        = "ycsb-s3-policy"
+  description = "Policy for S3 access from EC2"
+  policy      = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Action = [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      Resource = [
+        "arn:aws:s3:::${var.s3_bucket_name}",
+        "arn:aws:s3:::${var.s3_bucket_name}/*"
+      ]
+    }]
+  })
+}
+
+# Attach Policy to Role
+resource "aws_iam_role_policy_attachment" "s3_policy_attachment" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.s3_policy.arn
+}
+
+# Create IAM instance profile
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "ycsb-instance-profile"
+  role = aws_iam_role.ec2_role.name
+}
+
+# Security Group to allow SSH
 resource "aws_security_group" "ycsb" {
   name        = "ycsb-sg"
   description = "Allow SSH access"
@@ -30,11 +80,12 @@ resource "aws_security_group" "ycsb" {
 //   --region us-west-2
 //   --output table
 
-
+# EC2 Instance
 resource "aws_instance" "ycsb" {
-  ami                    = "ami-04f5a6a7ecc99fbe2" # Ubuntu 20.04 for us-west-2 (update if needed)
+  ami                    = "ami-04f5a6a7ecc99fbe2" # Update as needed
   instance_type          = "t3.micro"
   vpc_security_group_ids = [aws_security_group.ycsb.id]
+  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
 
   user_data = <<-EOF
     #!/bin/bash
