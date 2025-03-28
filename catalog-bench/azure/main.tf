@@ -117,7 +117,7 @@ resource "azurerm_linux_virtual_machine" "ycsb" {
       -v /mnt/results:/YCSB/results \
       ${var.docker_image}
 
-    shutdown -h now
+    # shutdown -h now
   EOF
   )
 }

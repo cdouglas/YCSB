@@ -51,7 +51,7 @@ for THREADS in $(eval echo {$THREAD_RANGE}); do
 done
 
 TARBALL="${CLOUD}_results_$(date +%s).tgz"
-BUCKET_PATH="benchmark-results/${TARBALL}"
+BUCKET_PATH="ycsb-results/${TARBALL}"
 
 echo "📦 Compressing all results into $TARBALL..."
 tar czf "$TARBALL" -C "$RESULTDIR" .
@@ -64,7 +64,6 @@ fi
 # === Upload logic ===
 upload_to_azure() {
   echo "☁️ Uploading to Azure Blob Storage..."
-  azcopy login --identity
   azcopy copy "$TARBALL" "https://${AZURE_BUCKET}.blob.core.windows.net/${BUCKET_PATH}"
 }
 
