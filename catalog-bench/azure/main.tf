@@ -107,10 +107,17 @@ resource "azurerm_linux_virtual_machine" "ycsb" {
     apt-get install -y docker.io
     systemctl enable docker
     systemctl start docker
+
+    usermod -aG docker azureuser
+    mkdir -p /mnt/results
+
     docker run --rm \
       -e AZURE_STORAGE_ACCOUNT=${var.storage_account_name} \
       -e AZURE_STORAGE_CONTAINER=${var.storage_container_name} \
+      -v /mnt/results:/YCSB/results \
       ${var.docker_image}
+
+    shutdown -h now
   EOF
   )
 }
@@ -129,4 +136,3 @@ resource "azurerm_role_assignment" "vm_blob_data_contributor" {
 output "vm_ip" {
   value = azurerm_public_ip.ycsb.ip_address
 }
-
