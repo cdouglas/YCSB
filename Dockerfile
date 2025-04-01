@@ -22,6 +22,13 @@ RUN apt-get update && \
 # Install AWS CLI
 RUN pip3 install --no-cache-dir awscli
 
+# from https://cloud.google.com/sdk/docs/install#deb
+# RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | \
+#       tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
+#       curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
+#       gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg && \
+#       apt-get update -y && apt-get install google-cloud-cli -y
+
 # Install Google Cloud SDK with better error handling
 RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" | \
       tee /etc/apt/sources.list.d/google-cloud-sdk.list && \
