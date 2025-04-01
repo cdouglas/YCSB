@@ -80,22 +80,25 @@ resource "google_compute_instance" "benchmark_instance" {
     systemctl enable docker
     systemctl start docker
     
-    # Create results directory with proper permissions
-    mkdir -p /opt/benchmark/results
-    chmod 777 /opt/benchmark/results
+    # Create results directory with proper permissions - now using /mnt/results for consistency with Azure
+    mkdir -p /mnt/results
+    chmod 777 /mnt/results
     
-    # Run the benchmark with explicit GCP configuration
+    # Run the benchmark with explicit GCP configuration and mount to /mnt/results
     docker run --rm \
       -e CLOUD=gcp \
       -e GCP_BUCKET="${var.gcp_bucket_name}" \
       -e THREAD_RANGE="1..8" \
       -e RUNS="5" \
-      -v /opt/benchmark/results:/YCSB/results \
+      -v /mnt/results:/YCSB/results \
       --name benchmark-container \
       ${var.docker_image}
       
+    # Copy results to GCS bucket for persistence
+    gcloud storage cp -r /mnt/results gs://${var.gcp_bucket_name}/benchmark-results/$(date +%Y-%m-%d-%H-%M-%S)/ || true
+    
     # Save logs for debugging
-    docker logs benchmark-container > /opt/benchmark/docker_logs.txt 2>&1 || true
+    docker logs benchmark-container > /mnt/results/docker_logs.txt 2>&1 || true
   EOF
 }
 
@@ -105,4 +108,9 @@ output "instance_ip" {
 
 output "bucket_name" {
   value = data.google_storage_bucket.existing_bucket.name
+}
+
+output "results_path" {
+  value = "/mnt/results"
+  description = "Path to benchmark results on the VM"
 }
