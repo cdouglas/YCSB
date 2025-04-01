@@ -7,6 +7,7 @@ set -euo pipefail
 # === Determine cloud environment and thread range ===
 CLOUD="${CLOUD:-${1:-}}"
 THREAD_RANGE="${2:-1..16}"
+RUNS="${RUNS:-${3:-10}}"
 SKIP_UPLOAD=false
 
 # If args were passed explicitly, skip upload
@@ -40,14 +41,16 @@ OUTDIR=$RESULTDIR/$CLOUD
 mkdir -p "$OUTDIR"
 
 for THREADS in $(eval echo {$THREAD_RANGE}); do
-  TESTNAME=${CLOUD}_${THREADS}
-  echo "🚀 Running YCSB benchmark on ${CLOUD} with ${THREADS} threads..."
-  ./bin/ycsb.sh run catalog-fileio -P workloads/lst \
-    -p fileio.store=${CLOUD} \
-    -p measurementtype=hdrhistogram+raw \
-    -p exportfile="${OUTDIR}/${TESTNAME}" \
-    -threads ${THREADS} | tee ${OUTDIR}/${TESTNAME}_raw
-  sleep 2
+  for ((i = 1; i <= RUNS; i++)); do
+    TESTNAME="${CLOUD}_${THREADS}_run${i}"
+    echo "🚀 Running YCSB benchmark on ${CLOUD} with ${THREADS} threads (run ${i}/${RUNS})..."
+    ./bin/ycsb.sh run catalog-fileio -P workloads/lst \
+      -p fileio.store=${CLOUD} \
+      -p measurementtype=hdrhistogram+raw \
+      -p exportfile="${OUTDIR}/${TESTNAME}" \
+      -threads ${THREADS} | tee ${OUTDIR}/${TESTNAME}_raw
+    sleep 2
+  done
 done
 
 TARBALL="${CLOUD}_results_$(date +%s).tgz"
