@@ -72,7 +72,7 @@ resource "azurerm_linux_virtual_machine" "ycsb" {
   name                  = "ycsb-vm"
   resource_group_name   = azurerm_resource_group.ycsb.name
   location              = var.azure_region
-  size                  = "Standard_B2s"
+  size                  = var.vm_size
   admin_username        = "azureuser"
   network_interface_ids = [azurerm_network_interface.ycsb.id]
 
