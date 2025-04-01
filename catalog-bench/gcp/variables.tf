@@ -1,31 +1,35 @@
-variable "gcp_credentials_file" {
-  type        = string
-  description = "Path to the service account credentials JSON"
-}
-
 variable "gcp_project" {
-  type = string
+  type        = string
+  description = "GCP project ID"
 }
 
 variable "gcp_region" {
-  type = string
-}
-
-variable "ssh_public_key_path" {
-  type = string
-}
-
-variable "ssh_user" {
   type        = string
-  description = "The username for SSH access to the VM"
+  description = "GCP region to deploy the instance"
 }
 
-variable "docker_image" {
+variable "gcp_zone" {
   type        = string
-  description = "Docker image to run benchmark"
+  description = "GCP zone to deploy the instance"
 }
 
 variable "gcs_bucket_name" {
   type        = string
-  description = "GCS bucket to store benchmark results"
+  description = "GCS bucket name for benchmark results"
+}
+
+variable "ssh_user" {
+  type        = string
+  description = "Username for SSH access"
+  default     = "gcpuser"
+}
+
+variable "ssh_public_key_path" {
+  type        = string
+  description = "Path to the public SSH key file"
+}
+
+variable "docker_image" {
+  type        = string
+  description = "Docker image for the benchmark"
 }
