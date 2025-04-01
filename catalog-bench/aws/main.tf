@@ -72,14 +72,6 @@ resource "aws_security_group" "ycsb" {
   }
 }
 
-// AMI from:
-// aws ec2 describe-images
-//   --owners 099720109477
-//   --filters "Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*" "Name=virtualization-type,Values=hvm" "Name=root-device-type,Values=ebs"
-//   --query 'Images[*].[ImageId,Name]'
-//   --region us-west-2
-//   --output table
-
 # EC2 Instance
 resource "aws_instance" "ycsb" {
   ami                    = "ami-04f5a6a7ecc99fbe2" # Update as needed
@@ -118,3 +110,4 @@ resource "aws_instance" "ycsb" {
 output "instance_ip" {
   value = aws_instance.ycsb.public_ip
 }
+
