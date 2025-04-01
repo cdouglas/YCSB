@@ -1,0 +1,6 @@
+**/.git
+**/target/test-classes/
+**/target/surefire-reports/
+**/*.iml
+
+catalog-bench/
