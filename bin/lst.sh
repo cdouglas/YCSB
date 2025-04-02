@@ -5,17 +5,18 @@ set -euo pipefail
 # export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
 
 # === Determine cloud environment and thread range ===
+LOCAL_RUN=false
+
+if [[ "${1:-}" == "--local" ]]; then
+  LOCAL_RUN=true
+  shift
+fi
 CLOUD="${CLOUD:-${1:-}}"
 THREAD_RANGE="${2:-1..16}"
 RUNS="${RUNS:-${3:-10}}"
-SKIP_UPLOAD=false
-
-# If args were passed explicitly, skip upload
-if [[ -n "${1-}" || -n "${2-}" ]]; then
-  SKIP_UPLOAD=true
-fi
 
 # Auto-detect cloud environment if not set
+if [[ "$LOCAL_RUN" != true ]]; then
 if [[ -z "$CLOUD" ]]; then
   if curl -s -H Metadata:true "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | grep -q "compute"; then
     echo "☁️ Detected Azure"
@@ -32,6 +33,8 @@ if [[ -z "$CLOUD" ]]; then
   fi
 fi
 
+fi
+
 RESULTDIR=results
 AZURE_BUCKET=lst-consistency
 GCP_BUCKET=lst-consistency
@@ -39,6 +42,8 @@ S3_BUCKET=casalog
 
 OUTDIR=$RESULTDIR/$CLOUD
 mkdir -p "$OUTDIR"
+
+if [[ "$LOCAL_RUN" != true ]]; then
 # === Export cloud instance metadata if applicable ===
 if [[ "$CLOUD" == "azure" ]]; then
   echo "📋 Saving Azure instance metadata to $OUTDIR/nodeinfo.json..."
@@ -56,6 +61,8 @@ elif [[ "$CLOUD" == "gcp" ]]; then
   curl -s -H "Metadata-Flavor: Google" \
     "http://metadata.google.internal/computeMetadata/v1/instance/?recursive=true" \
     -o "$OUTDIR/nodeinfo.json"
+fi
+
 fi
 
 for THREADS in $(eval echo {$THREAD_RANGE}); do
@@ -97,6 +104,11 @@ upload_to_gcp() {
   echo "☁️ Uploading to GCS..."
   gsutil cp "$TARBALL" "gs://${GCP_BUCKET}/${BUCKET_PATH}"
 }
+
+if [[ "$LOCAL_RUN" == true ]]; then
+  echo "🚫 Local run: skipping upload."
+  exit 0
+fi
 
 echo "🚚 Uploading final results archive..."
 case $CLOUD in
