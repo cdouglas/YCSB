@@ -33,6 +33,32 @@ resource "aws_instance" "ycsb_vm" {
       host        = self.public_ip
     }
   }
+  user_data = <<-EOF
+    #!/bin/bash
+    set -eux
+
+    useradd -m -s /bin/bash ${var.ssh_user}
+    mkdir -p /home/${var.ssh_user}/.ssh
+    echo "${file(var.ssh_public_key_path)}" > /home/${var.ssh_user}/.ssh/authorized_keys
+    chown -R ${var.ssh_user}:${var.ssh_user} /home/${var.ssh_user}/.ssh
+    chmod 600 /home/${var.ssh_user}/.ssh/authorized_keys
+
+    # Install Docker
+    amazon-linux-extras install docker -y
+    systemctl enable docker
+    systemctl start docker
+
+    usermod -aG docker ${var.ssh_user}
+    mkdir -p /mnt/results
+
+    # Run benchmark container with volume mount
+    docker run --rm \
+      -e CLOUD=aws \
+      -e S3_BUCKET=${var.s3_bucket_name} \
+      -v /mnt/results:/YCSB/results \
+      ${var.docker_image}
+  EOF
+
 }
 
 output "vm_public_ip" {
