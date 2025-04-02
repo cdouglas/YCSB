@@ -9,6 +9,7 @@ LOCAL_RUN=false
 
 if [[ "${1:-}" == "--local" ]]; then
   LOCAL_RUN=true
+  RUNS=1
   shift
 fi
 CLOUD="${CLOUD:-${1:-}}"
