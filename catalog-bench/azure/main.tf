@@ -136,3 +136,15 @@ resource "azurerm_role_assignment" "vm_blob_data_contributor" {
 output "vm_ip" {
   value = azurerm_public_ip.ycsb.ip_address
 }
+
+output "ssh_config" {
+  value = <<EOT
+Host ycsb-vm
+  HostName ${azurerm_public_ip.ycsb_vm.ip_address}
+  User azureuser
+  IdentityFile ${var.ssh_public_key_path}
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+EOT
+  description = "SSH config snippet for connecting to the VM"
+}

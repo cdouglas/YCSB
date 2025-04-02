@@ -39,6 +39,24 @@ S3_BUCKET=casalog
 
 OUTDIR=$RESULTDIR/$CLOUD
 mkdir -p "$OUTDIR"
+# === Export cloud instance metadata if applicable ===
+if [[ "$CLOUD" == "azure" ]]; then
+  echo "📋 Saving Azure instance metadata to $OUTDIR/nodeinfo.json..."
+  curl -s -H "Metadata: true" \
+    "http://169.254.169.254/metadata/instance/compute?api-version=2021-02-01" \
+    -o "$OUTDIR/nodeinfo.json"
+
+elif [[ "$CLOUD" == "aws" ]]; then
+  echo "📋 Saving AWS instance metadata to $OUTDIR/nodeinfo.json..."
+  curl -s "http://169.254.169.254/latest/dynamic/instance-identity/document" \
+    -o "$OUTDIR/nodeinfo.json"
+
+elif [[ "$CLOUD" == "gcp" ]]; then
+  echo "📋 Saving GCP instance metadata to $OUTDIR/nodeinfo.json..."
+  curl -s -H "Metadata-Flavor: Google" \
+    "http://metadata.google.internal/computeMetadata/v1/instance/?recursive=true" \
+    -o "$OUTDIR/nodeinfo.json"
+fi
 
 for THREADS in $(eval echo {$THREAD_RANGE}); do
   for ((i = 1; i <= RUNS; i++)); do
