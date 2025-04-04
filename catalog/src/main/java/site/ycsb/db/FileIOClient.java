@@ -127,7 +127,6 @@ public class FileIOClient extends DB {
           e.printStackTrace(System.err);
           return Status.ERROR;
       }
-      System.out.println("OK");
       return Status.OK;
     }
     return Status.SERVICE_UNAVAILABLE;
