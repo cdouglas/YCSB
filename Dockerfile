@@ -57,6 +57,7 @@ RUN chmod +x /YCSB/bin/lst.sh /YCSB/bin/ycsb.sh
 ENV CLOUD="" \
     THREAD_RANGE="1..16" \
     RUNS="10" \
+    CLIENT="direct" \
     SKIP_UPLOAD="false" \
     GCP_BUCKET="lst-consistency" \
     S3_BUCKET="casalog" \

@@ -13,7 +13,7 @@ if [[ "${1:-}" == "--local" ]]; then
   shift
 fi
 CLOUD="${CLOUD:-${1:-}}"
-THREAD_RANGE="${2:-1..16}"
+THREAD_RANGE="${THREAD_RANGE:-${2:-1..16}}"
 RUNS="${RUNS:-${3:-10}}"
 CLIENT="${CLIENT:-${4:-fileio}}"
 

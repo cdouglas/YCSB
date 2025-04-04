@@ -35,6 +35,8 @@ public class FileIOClient extends DB {
   private static final String FILE_SIZE = "fileio.file.size";
   private static final String FILE_NAME = "fileio.file.name";
 
+  private static boolean inited = false;
+
   String sacriFile;
   int baseSize;
   int maxAttempts;
@@ -65,8 +67,15 @@ public class FileIOClient extends DB {
           properties.get(CatalogProperties.WAREHOUSE_LOCATION) + "/" + "sacriFile").toString();
       scratch = new byte[baseSize];
       rand.nextBytes(scratch);
-      try (PositionOutputStream out = fileIO.newOutputFile(sacriFile).createOrOverwrite()) {
-        out.write(scratch);
+      synchronized (FileIOClient.class) {
+        if (inited) {
+          return;
+        }
+        try (PositionOutputStream out = fileIO.newOutputFile(sacriFile).createOrOverwrite()) {
+          out.write(scratch);
+        }
+        System.out.println("Created: " + sacriFile);
+        inited = true;
       }
     } catch (Exception e){
       throw new DBException("Failed to load remote / init storage", e);
@@ -98,23 +107,27 @@ public class FileIOClient extends DB {
       ByteArrayOutputStream os = new ByteArrayOutputStream(baseSize);
       try (InputStream i = in.newStream()) {
         ByteStreams.copy(i, os);
+        AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
+        rand.nextBytes(scratch);
+        try (ByteArrayInputStream b = new ByteArrayInputStream(scratch)) {
+          b.mark(scratch.length);
+          CAS tok = out.prepare(() -> b, AtomicOutputFile.Strategy.CAS);
+          b.reset();
+          out.writeAtomic(tok, () -> b);
+        }
       } catch (SupportsAtomicOperations.CASException | SupportsAtomicOperations.AppendException e) {
+        //Full-jitter backoff
+        double temperature = 400 * Math.pow(2, attempts);
+        double fullJitterSleep =  Math.random() * temperature; // E[sleep] = 200*2^a
+        try {
+          Thread.sleep((long) fullJitterSleep);
+        } catch (Exception ignored){};
         continue;
-      } catch (IOException e) {
+      } catch (Exception e) {
+          e.printStackTrace(System.err);
           return Status.ERROR;
       }
-      AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
-      rand.nextBytes(scratch);
-      try (ByteArrayInputStream b = new ByteArrayInputStream(scratch)) {
-        b.mark(scratch.length);
-        CAS tok = out.prepare(() -> b, AtomicOutputFile.Strategy.CAS);
-        b.reset();
-        out.writeAtomic(tok, () -> b);
-      } catch (SupportsAtomicOperations.CASException | SupportsAtomicOperations.AppendException e) {
-        continue;
-      } catch (IOException e) {
-        return Status.ERROR;
-      }
+      System.out.println("OK");
       return Status.OK;
     }
     return Status.SERVICE_UNAVAILABLE;
