@@ -31,6 +31,7 @@ public class FileIOClient extends DB {
   private static final Logger logger = LoggerFactory.getLogger(FileIOClient.class);
 
   private static final String FILEIO_STORE = "fileio.store";
+  private static final String FILEIO_STRATEGY = "fileio.strategy";
   private static final String MAX_ATTEMPTS = "fileio.max.attempts";
   private static final String FILE_SIZE = "fileio.file.size";
   private static final String FILE_NAME = "fileio.file.name";
@@ -43,6 +44,7 @@ public class FileIOClient extends DB {
   SupportsAtomicOperations<CAS> fileIO;
   byte[] scratch;
   final Random rand = new Random();
+  AtomicOutputFile.Strategy strategy;
 
   @Override
   public void init() throws DBException {
@@ -67,15 +69,16 @@ public class FileIOClient extends DB {
           properties.get(CatalogProperties.WAREHOUSE_LOCATION) + "/" + "sacriFile").toString();
       scratch = new byte[baseSize];
       rand.nextBytes(scratch);
+      strategy = Enum.valueOf(AtomicOutputFile.Strategy.class,
+          getProperties().getOrDefault(FILEIO_STRATEGY, "CAS").toString());
       synchronized (FileIOClient.class) {
-        if (inited) {
-          return;
+        if (!inited) {
+          try (PositionOutputStream out = fileIO.newOutputFile(sacriFile).createOrOverwrite()) {
+            out.write(scratch);
+          }
+          System.out.println("Created: " + sacriFile);
+          inited = true;
         }
-        try (PositionOutputStream out = fileIO.newOutputFile(sacriFile).createOrOverwrite()) {
-          out.write(scratch);
-        }
-        System.out.println("Created: " + sacriFile);
-        inited = true;
       }
     } catch (Exception e){
       throw new DBException("Failed to load remote / init storage", e);
@@ -111,7 +114,7 @@ public class FileIOClient extends DB {
         rand.nextBytes(scratch);
         try (ByteArrayInputStream b = new ByteArrayInputStream(scratch)) {
           b.mark(scratch.length);
-          CAS tok = out.prepare(() -> b, AtomicOutputFile.Strategy.CAS);
+          CAS tok = out.prepare(() -> b, strategy);
           b.reset();
           out.writeAtomic(tok, () -> b);
         }
