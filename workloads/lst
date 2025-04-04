@@ -70,10 +70,10 @@ fieldlengthdistribution=constant
 readproportion=0
 
 # What proportion of operations are updates
-updateproportion=0.95
+updateproportion=1.0
 
 # What proportion of operations are inserts
-insertproportion=0.05
+insertproportion=0
 
 # What proportion of operations read then modify a record
 readmodifywriteproportion=0

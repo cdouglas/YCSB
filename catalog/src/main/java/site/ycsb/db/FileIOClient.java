@@ -127,12 +127,20 @@ public class FileIOClient extends DB {
         } catch (Exception ignored){};
         continue;
       } catch (Exception e) {
-          e.printStackTrace(System.err);
+          e.printStackTrace(System.out);
           return Status.ERROR;
       }
       return Status.OK;
     }
     return Status.SERVICE_UNAVAILABLE;
+  }
+
+  private void replaceObject(byte[] data) {
+
+  }
+
+  private void appendObject(byte[] data) {
+
   }
 
   @Override
