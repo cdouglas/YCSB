@@ -15,6 +15,7 @@ fi
 CLOUD="${CLOUD:-${1:-}}"
 THREAD_RANGE="${2:-1..16}"
 RUNS="${RUNS:-${3:-10}}"
+CLIENT="${CLIENT:-${4:-fileio}}"
 
 # Auto-detect cloud environment if not set
 if [[ "$LOCAL_RUN" != true ]]; then
@@ -70,7 +71,7 @@ for THREADS in $(eval echo {$THREAD_RANGE}); do
   for ((i = 1; i <= RUNS; i++)); do
     TESTNAME="${CLOUD}_${THREADS}_run${i}"
     echo "🚀 Running YCSB benchmark on ${CLOUD} with ${THREADS} threads (run ${i}/${RUNS})..."
-    ./bin/ycsb.sh run catalog-fileio -P workloads/lst \
+    ./bin/ycsb.sh run catalog-${CLIENT} -P workloads/lst \
       -p fileio.store=${CLOUD} \
       -p measurementtype=hdrhistogram+raw \
       -p exportfile="${OUTDIR}/${TESTNAME}" \
