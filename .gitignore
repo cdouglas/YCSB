@@ -27,5 +27,9 @@ output*
 # ignore terraform
 .terraform
 .terraform.lock.hcl
+# terraform.tfvars ?
 *.tfstate
 *.tfstate.backup
+
+# ignore result dir
+results/

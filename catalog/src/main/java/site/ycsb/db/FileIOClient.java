@@ -7,6 +7,7 @@ import org.apache.iceberg.io.AtomicOutputFile;
 import org.apache.iceberg.io.CAS;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.io.PositionOutputStream;
+import org.apache.iceberg.io.SeekableInputStream;
 import org.apache.iceberg.io.SupportsAtomicOperations;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +20,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
@@ -34,6 +36,7 @@ public class FileIOClient extends DB {
   private static final String FILEIO_STRATEGY = "fileio.strategy";
   private static final String MAX_ATTEMPTS = "fileio.max.attempts";
   private static final String FILE_SIZE = "fileio.file.size";
+  private static final String MAX_FILE_SIZE = "fileio.max.file.size";
   private static final String DELTA_SIZE = "fileio.file.size";
   private static final String FILE_NAME = "fileio.file.name";
 
@@ -42,6 +45,7 @@ public class FileIOClient extends DB {
   String sacriFile;
   int baseSize;
   int deltaSize;
+  int maxFileSize;
   int maxAttempts;
   SupportsAtomicOperations<CAS> fileIO;
   byte[] replScratch;
@@ -67,6 +71,7 @@ public class FileIOClient extends DB {
         throw new IllegalArgumentException("Unknown fileio object: " + getProperties().get(FILEIO_STORE));
       }
       baseSize = Integer.parseInt(getProperties().getOrDefault(FILE_SIZE, Integer.toString(1 << 20)).toString());
+      maxFileSize = Integer.parseInt(getProperties().getOrDefault(MAX_FILE_SIZE, Integer.toString(0)).toString());
       deltaSize = Integer.parseInt(getProperties().getOrDefault(DELTA_SIZE, Integer.toString(1 << 8)).toString());
       maxAttempts = Integer.parseInt(getProperties().getOrDefault(MAX_ATTEMPTS, Integer.toString(10)).toString());
       sacriFile = getProperties().getOrDefault(FILE_NAME,
@@ -123,20 +128,28 @@ public class FileIOClient extends DB {
   @Override
   public Status update(String table, String key, Map<String, ByteIterator> values) {
     int attempts = 0;
-    rand.nextBytes(replScratch);
+    rand.nextBytes(deltaScratch);
     while (attempts++ < maxAttempts) {
       InputFile in = fileIO.newInputFile(sacriFile);
-      ByteArrayOutputStream os = new ByteArrayOutputStream(baseSize);
-      try (InputStream i = in.newStream()) {
-        ByteStreams.copy(i, os);
+      try {
+        if (in.getLength() > maxFileSize) {
+          // CAS
+          rand.nextBytes(replScratch);
+          readObject(in); // read file to merge
+          AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
+          atomicOp(out, replScratch, AtomicOutputFile.Strategy.CAS);
+          return Status.OK;
+        }
+        // APPEND
         AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
-        replaceObject(out, replScratch);
+        atomicOp(out, deltaScratch, AtomicOutputFile.Strategy.APPEND);
+        return Status.OK;
       } catch (SupportsAtomicOperations.CASException | SupportsAtomicOperations.AppendException e) {
         int delayMs = (int) Math.min(100 * Math.pow(2.0, attempts - 1), 60000);
         int jitter = rand.nextInt(Math.max(1, (int) (delayMs * 0.1)));
         try {
           TimeUnit.MILLISECONDS.sleep(delayMs + jitter);
-        } catch (InterruptedException ignored){
+        } catch (InterruptedException ignored) {
           Thread.currentThread().interrupt();
           return Status.ERROR;
         };
@@ -145,22 +158,24 @@ public class FileIOClient extends DB {
           e.printStackTrace(System.out);
           return Status.ERROR;
       }
-      return Status.OK;
     }
     return Status.SERVICE_UNAVAILABLE;
   }
 
-  private void replaceObject(AtomicOutputFile<CAS> out, byte[] data) throws IOException {
-    try (ByteArrayInputStream b = new ByteArrayInputStream(data)) {
-      b.mark(data.length);
-      CAS tok = out.prepare(() -> b, AtomicOutputFile.Strategy.CAS);
-      b.reset();
-      out.writeAtomic(tok, () -> b);
+  private void readObject(InputFile in) throws IOException {
+    try (InputStream i = in.newStream();
+         NullOutputStream os = NullOutputStream.NULL_OUTPUT_STREAM) {
+      ByteStreams.copy(i, os);
     }
   }
 
-  private void appendObject(byte[] data) {
-    
+  private void atomicOp(AtomicOutputFile<CAS> out, byte[] data, AtomicOutputFile.Strategy strategy) throws IOException {
+    try (ByteArrayInputStream b = new ByteArrayInputStream(data)) {
+      b.mark(data.length);
+      CAS tok = out.prepare(() -> b, strategy);
+      b.reset();
+      out.writeAtomic(tok, () -> b);
+    }
   }
 
   @Override

@@ -115,6 +115,7 @@ resource "azurerm_linux_virtual_machine" "ycsb" {
       -e AZURE_STORAGE_ACCOUNT=${var.storage_account_name} \
       -e AZURE_STORAGE_CONTAINER=${var.storage_container_name} \
       -v /mnt/results:/YCSB/results \
+      -v /mnt/jars:/YCSB/catalog/target \
       ${var.docker_image}
 
     # shutdown -h now
