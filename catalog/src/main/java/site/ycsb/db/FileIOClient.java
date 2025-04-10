@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.Vector;
+import java.util.concurrent.TimeUnit;
 
 public class FileIOClient extends DB {
 
@@ -106,6 +107,19 @@ public class FileIOClient extends DB {
     return Status.NOT_IMPLEMENTED;
   }
 
+  // from BaseTransaction
+  // default 4 retries
+  //           .exponentialBackoff(
+  //              base.propertyAsInt(COMMIT_MIN_RETRY_WAIT_MS, COMMIT_MIN_RETRY_WAIT_MS_DEFAULT), // 100
+  //              base.propertyAsInt(COMMIT_MAX_RETRY_WAIT_MS, COMMIT_MAX_RETRY_WAIT_MS_DEFAULT), // 60000 (1 min)
+  //              base.propertyAsInt(COMMIT_TOTAL_RETRY_TIME_MS, COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT), // 30 minutes
+  //              2.0 /* exponential */) // scaleFactor
+
+  // from Tasks
+  //           int delayMs =
+  //              (int) Math.min(minSleepTimeMs * Math.pow(scaleFactor, attempt - 1), maxSleepTimeMs);
+  //          int jitter = ThreadLocalRandom.current().nextInt(Math.max(1, (int) (delayMs * 0.1)));
+
   @Override
   public Status update(String table, String key, Map<String, ByteIterator> values) {
     int attempts = 0;
@@ -118,11 +132,14 @@ public class FileIOClient extends DB {
         AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
         replaceObject(out, replScratch);
       } catch (SupportsAtomicOperations.CASException | SupportsAtomicOperations.AppendException e) {
-        double temperature = 400 * Math.pow(2, attempts);
-        double fullJitterSleep =  Math.random() * temperature; // E[sleep] = 200*2^a
+        int delayMs = (int) Math.min(100 * Math.pow(2.0, attempts - 1), 60000);
+        int jitter = rand.nextInt(Math.max(1, (int) (delayMs * 0.1)));
         try {
-          Thread.sleep((long) fullJitterSleep);
-        } catch (Exception ignored){};
+          TimeUnit.MILLISECONDS.sleep(delayMs + jitter);
+        } catch (InterruptedException ignored){
+          Thread.currentThread().interrupt();
+          return Status.ERROR;
+        };
         continue;
       } catch (Exception e) {
           e.printStackTrace(System.out);

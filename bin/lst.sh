@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Optional: enable remote debugging
-# export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
+export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
 
 # === Determine cloud environment and thread range ===
 LOCAL_RUN=false
@@ -85,6 +85,8 @@ BUCKET_PATH="ycsb-results/${TARBALL}"
 
 echo "📦 Compressing all results into $TARBALL..."
 tar czf "$TARBALL" -C "$RESULTDIR" .
+
+cp $TARBALL $RESULTDIR
 
 if [ "$SKIP_UPLOAD" = true ]; then
   echo "🚫 Upload skipped due to manual arguments."

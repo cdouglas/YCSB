@@ -60,7 +60,7 @@ ENV CLOUD="" \
     CLIENT="direct" \
     SKIP_UPLOAD="false" \
     GCP_BUCKET="lst-consistency" \
-    S3_BUCKET="casalog" \
+    S3_BUCKET="lst-pbafvfgrapl" \
     AZURE_BUCKET="lst-consistency"
 
 # Entry point to benchmark runner
