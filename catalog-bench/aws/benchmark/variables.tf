@@ -1,4 +1,3 @@
-
 variable "aws_region" {
   type = string
 }
@@ -42,3 +41,25 @@ variable "ssh_private_key_path" {
   type        = string
   description = "Path to the private key for SSH provisioning"
 }
+
+variable "ssh_user" {
+  type        = string
+  description = "Username to create on the instance"
+}
+
+variable "ssh_public_key_path" {
+  type        = string
+  description = "Path to the SSH public key"
+}
+
+variable "docker_image" {
+  type        = string
+  description = "Docker image to run the benchmark"
+}
+
+variable "ssh_ingress_cidr" {
+  type        = string
+  default     = "0.0.0.0/0"
+  description = "CIDR block allowed to SSH into the EC2 instance"
+}
+

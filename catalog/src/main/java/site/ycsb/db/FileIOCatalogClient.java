@@ -109,7 +109,7 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
   }
 
   static S3FileIO s3FileIO(Map<String,String> properties) {
-    WAREHOUSE_LOCATION = "s3://" + "casalog" + "/" + UNIQ_RUN;
+    WAREHOUSE_LOCATION = "s3://" + "lst-pbafvfgrapl" + "/" + UNIQ_RUN;
     properties.put(CatalogProperties.WAREHOUSE_LOCATION, WAREHOUSE_LOCATION);
     final S3FileIO s3FileIO = new S3FileIO();
     s3FileIO.initialize(new HashMap<>());

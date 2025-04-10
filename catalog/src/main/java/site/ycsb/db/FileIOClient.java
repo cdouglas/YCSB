@@ -1,7 +1,6 @@
 package site.ycsb.db;
 
 import org.apache.commons.io.output.NullOutputStream;
-import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.curator.shaded.com.google.common.io.ByteStreams;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.io.AtomicOutputFile;
@@ -34,15 +33,18 @@ public class FileIOClient extends DB {
   private static final String FILEIO_STRATEGY = "fileio.strategy";
   private static final String MAX_ATTEMPTS = "fileio.max.attempts";
   private static final String FILE_SIZE = "fileio.file.size";
+  private static final String DELTA_SIZE = "fileio.file.size";
   private static final String FILE_NAME = "fileio.file.name";
 
   private static boolean inited = false;
 
   String sacriFile;
   int baseSize;
+  int deltaSize;
   int maxAttempts;
   SupportsAtomicOperations<CAS> fileIO;
-  byte[] scratch;
+  byte[] replScratch;
+  byte[] deltaScratch;
   final Random rand = new Random();
   AtomicOutputFile.Strategy strategy;
 
@@ -53,28 +55,30 @@ public class FileIOClient extends DB {
       Object o = getProperties().get(FILEIO_STORE);
       if ("aws".equals(o)) {
         fileIO = FileIOCatalogClient.s3FileIO(properties);
-        System.out.println("### S3 ###");
+        System.out.println("### S3 DIRECT ###");
       } else if ("gcp".equals(o)) {
         fileIO = FileIOCatalogClient.gcsFileIO(properties);
-        System.out.println("### GCS ###");
+        System.out.println("### GCS DIRECT ###");
       } else if ("azure".equals(o)) {
         fileIO = FileIOCatalogClient.azureFileIO(properties);
-        System.out.println("### AZURE ###");
+        System.out.println("### AZURE DIRECT ###");
       } else {
         throw new IllegalArgumentException("Unknown fileio object: " + getProperties().get(FILEIO_STORE));
       }
       baseSize = Integer.parseInt(getProperties().getOrDefault(FILE_SIZE, Integer.toString(1 << 20)).toString());
+      deltaSize = Integer.parseInt(getProperties().getOrDefault(DELTA_SIZE, Integer.toString(1 << 8)).toString());
       maxAttempts = Integer.parseInt(getProperties().getOrDefault(MAX_ATTEMPTS, Integer.toString(10)).toString());
       sacriFile = getProperties().getOrDefault(FILE_NAME,
           properties.get(CatalogProperties.WAREHOUSE_LOCATION) + "/" + "sacriFile").toString();
-      scratch = new byte[baseSize];
-      rand.nextBytes(scratch);
+      replScratch = new byte[baseSize];
+      deltaScratch = new byte[deltaSize];
+      rand.nextBytes(replScratch);
       strategy = Enum.valueOf(AtomicOutputFile.Strategy.class,
           getProperties().getOrDefault(FILEIO_STRATEGY, "CAS").toString());
       synchronized (FileIOClient.class) {
         if (!inited) {
           try (PositionOutputStream out = fileIO.newOutputFile(sacriFile).createOrOverwrite()) {
-            out.write(scratch);
+            out.write(replScratch);
           }
           System.out.println("Created: " + sacriFile);
           inited = true;
@@ -105,21 +109,15 @@ public class FileIOClient extends DB {
   @Override
   public Status update(String table, String key, Map<String, ByteIterator> values) {
     int attempts = 0;
-    while (attempts < maxAttempts) {
+    rand.nextBytes(replScratch);
+    while (attempts++ < maxAttempts) {
       InputFile in = fileIO.newInputFile(sacriFile);
       ByteArrayOutputStream os = new ByteArrayOutputStream(baseSize);
       try (InputStream i = in.newStream()) {
         ByteStreams.copy(i, os);
         AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
-        rand.nextBytes(scratch);
-        try (ByteArrayInputStream b = new ByteArrayInputStream(scratch)) {
-          b.mark(scratch.length);
-          CAS tok = out.prepare(() -> b, strategy);
-          b.reset();
-          out.writeAtomic(tok, () -> b);
-        }
+        replaceObject(out, replScratch);
       } catch (SupportsAtomicOperations.CASException | SupportsAtomicOperations.AppendException e) {
-        //Full-jitter backoff
         double temperature = 400 * Math.pow(2, attempts);
         double fullJitterSleep =  Math.random() * temperature; // E[sleep] = 200*2^a
         try {
@@ -135,12 +133,17 @@ public class FileIOClient extends DB {
     return Status.SERVICE_UNAVAILABLE;
   }
 
-  private void replaceObject(byte[] data) {
-
+  private void replaceObject(AtomicOutputFile<CAS> out, byte[] data) throws IOException {
+    try (ByteArrayInputStream b = new ByteArrayInputStream(data)) {
+      b.mark(data.length);
+      CAS tok = out.prepare(() -> b, AtomicOutputFile.Strategy.CAS);
+      b.reset();
+      out.writeAtomic(tok, () -> b);
+    }
   }
 
   private void appendObject(byte[] data) {
-
+    
   }
 
   @Override

@@ -1,4 +1,3 @@
-
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
@@ -12,6 +11,30 @@ data "aws_s3_bucket" "benchmark_bucket" {
   bucket = var.s3_bucket_name
 }
 
+data "aws_subnet" "selected" {
+  id = var.subnet_id
+}
+
+resource "aws_security_group" "ycsb_sg" {
+  name        = "ycsb-benchmark-sg"
+  description = "Allow SSH access for benchmark EC2"
+  vpc_id      = data.aws_subnet.selected.vpc_id
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.ssh_ingress_cidr]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
 resource "aws_instance" "ycsb_vm" {
   ami                         = var.ami_id
   instance_type               = var.instance_type
@@ -19,6 +42,7 @@ resource "aws_instance" "ycsb_vm" {
   subnet_id                   = var.subnet_id
   associate_public_ip_address = true
   key_name                    = var.ssh_key_name
+  vpc_security_group_ids      = [aws_security_group.ycsb_sg.id]
 
   tags = {
     Name = "ycsb-benchmark"
@@ -28,11 +52,12 @@ resource "aws_instance" "ycsb_vm" {
     inline = ["echo Hello from YCSB VM!"]
     connection {
       type        = "ssh"
-      user        = "ec2-user"
-      private_key = file(var.ssh_private_key_path)
+      user        = "ubuntu"
       host        = self.public_ip
+      agent       = true
     }
   }
+
   user_data = <<-EOF
     #!/bin/bash
     set -eux
@@ -44,7 +69,7 @@ resource "aws_instance" "ycsb_vm" {
     chmod 600 /home/${var.ssh_user}/.ssh/authorized_keys
 
     # Install Docker
-    amazon-linux-extras install docker -y
+    amazon-linux-extras install docker -y || apt-get update && apt-get install -y docker.io
     systemctl enable docker
     systemctl start docker
 
