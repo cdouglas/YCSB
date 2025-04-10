@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Optional: enable remote debugging
-export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
+# export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
 
 # === Determine cloud environment and thread range ===
 LOCAL_RUN=false
