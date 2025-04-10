@@ -52,14 +52,24 @@ public class FileIOClient extends DB {
 
   @Override
   public void init() throws DBException {
+    baseSize = Integer.parseInt(getProperties().getOrDefault(FILE_SIZE, Integer.toString(1 << 14)).toString());
+    maxFileSize = baseSize + Integer.parseInt(getProperties().getOrDefault(MAX_LOG_SIZE, Integer.toString(1 << 24)).toString());
+    deltaSize = Integer.parseInt(getProperties().getOrDefault(DELTA_SIZE, Integer.toString(1 << 8)).toString());
+    maxAttempts = Integer.parseInt(getProperties().getOrDefault(MAX_ATTEMPTS, Integer.toString(10)).toString());
+    replScratch = new byte[baseSize];
+    deltaScratch = new byte[deltaSize];
+    strategy = Enum.valueOf(AtomicOutputFile.Strategy.class,
+        getProperties().getOrDefault(FILEIO_STRATEGY, "CAS").toString());
     try {
       final Map<String, String> properties = new HashMap<>();
       Object o = getProperties().get(FILEIO_STORE);
       if ("aws".equals(o)) {
         fileIO = FileIOCatalogClient.s3FileIO(properties);
+        maxFileSize = 0; // force CAS
         System.out.println("### S3 DIRECT ###");
       } else if ("gcp".equals(o)) {
         fileIO = FileIOCatalogClient.gcsFileIO(properties);
+        maxFileSize = 0; // force CAS
         System.out.println("### GCS DIRECT ###");
       } else if ("azure".equals(o)) {
         fileIO = FileIOCatalogClient.azureFileIO(properties);
@@ -67,16 +77,8 @@ public class FileIOClient extends DB {
       } else {
         throw new IllegalArgumentException("Unknown fileio object: " + getProperties().get(FILEIO_STORE));
       }
-      baseSize = Integer.parseInt(getProperties().getOrDefault(FILE_SIZE, Integer.toString(1 << 14)).toString());
-      maxFileSize = baseSize + Integer.parseInt(getProperties().getOrDefault(MAX_LOG_SIZE, Integer.toString(1 << 24)).toString());
-      deltaSize = Integer.parseInt(getProperties().getOrDefault(DELTA_SIZE, Integer.toString(1 << 8)).toString());
-      maxAttempts = Integer.parseInt(getProperties().getOrDefault(MAX_ATTEMPTS, Integer.toString(10)).toString());
       sacriFile = getProperties().getOrDefault(FILE_NAME,
           properties.get(CatalogProperties.WAREHOUSE_LOCATION) + "/" + "sacriFile").toString();
-      replScratch = new byte[baseSize];
-      deltaScratch = new byte[deltaSize];
-      strategy = Enum.valueOf(AtomicOutputFile.Strategy.class,
-          getProperties().getOrDefault(FILEIO_STRATEGY, "CAS").toString());
       synchronized (FileIOClient.class) {
         if (!inited) {
           InputFile in = fileIO.newInputFile(sacriFile);
