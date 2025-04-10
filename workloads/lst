@@ -40,7 +40,7 @@ recordcount=10
 # There is no default setting for operationcount but it is
 # required to be set.
 # The number of operations to use during the run phase.
-operationcount=1500
+operationcount=1000
 
 # The number of insertions to do, if different from recordcount.
 # Used with insertstart to grow an existing table.

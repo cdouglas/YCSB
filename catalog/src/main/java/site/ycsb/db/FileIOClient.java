@@ -7,7 +7,6 @@ import org.apache.iceberg.io.AtomicOutputFile;
 import org.apache.iceberg.io.CAS;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.io.PositionOutputStream;
-import org.apache.iceberg.io.SeekableInputStream;
 import org.apache.iceberg.io.SupportsAtomicOperations;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,10 +16,8 @@ import site.ycsb.DBException;
 import site.ycsb.Status;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
@@ -36,7 +33,7 @@ public class FileIOClient extends DB {
   private static final String FILEIO_STRATEGY = "fileio.strategy";
   private static final String MAX_ATTEMPTS = "fileio.max.attempts";
   private static final String FILE_SIZE = "fileio.file.size";
-  private static final String MAX_FILE_SIZE = "fileio.max.file.size";
+  private static final String MAX_LOG_SIZE = "fileio.max.log.size";
   private static final String DELTA_SIZE = "fileio.file.size";
   private static final String FILE_NAME = "fileio.file.name";
 
@@ -70,22 +67,22 @@ public class FileIOClient extends DB {
       } else {
         throw new IllegalArgumentException("Unknown fileio object: " + getProperties().get(FILEIO_STORE));
       }
-      baseSize = Integer.parseInt(getProperties().getOrDefault(FILE_SIZE, Integer.toString(1 << 20)).toString());
-      maxFileSize = Integer.parseInt(getProperties().getOrDefault(MAX_FILE_SIZE, Integer.toString(0)).toString());
+      baseSize = Integer.parseInt(getProperties().getOrDefault(FILE_SIZE, Integer.toString(1 << 14)).toString());
+      maxFileSize = baseSize + Integer.parseInt(getProperties().getOrDefault(MAX_LOG_SIZE, Integer.toString(1 << 24)).toString());
       deltaSize = Integer.parseInt(getProperties().getOrDefault(DELTA_SIZE, Integer.toString(1 << 8)).toString());
       maxAttempts = Integer.parseInt(getProperties().getOrDefault(MAX_ATTEMPTS, Integer.toString(10)).toString());
       sacriFile = getProperties().getOrDefault(FILE_NAME,
           properties.get(CatalogProperties.WAREHOUSE_LOCATION) + "/" + "sacriFile").toString();
       replScratch = new byte[baseSize];
       deltaScratch = new byte[deltaSize];
-      rand.nextBytes(replScratch);
       strategy = Enum.valueOf(AtomicOutputFile.Strategy.class,
           getProperties().getOrDefault(FILEIO_STRATEGY, "CAS").toString());
       synchronized (FileIOClient.class) {
         if (!inited) {
-          try (PositionOutputStream out = fileIO.newOutputFile(sacriFile).createOrOverwrite()) {
-            out.write(replScratch);
-          }
+          InputFile in = fileIO.newInputFile(sacriFile);
+          AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
+          rand.nextBytes(replScratch);
+          atomicOp(out, replScratch, AtomicOutputFile.Strategy.CAS);
           System.out.println("Created: " + sacriFile);
           inited = true;
         }
