@@ -60,19 +60,22 @@ public class FileIOClient extends DB {
     deltaScratch = new byte[deltaSize];
     strategy = Enum.valueOf(AtomicOutputFile.Strategy.class,
         getProperties().getOrDefault(FILEIO_STRATEGY, "CAS").toString());
+    String bucket = getProperties().getOrDefault(FileIOCatalogClient.BUCKET_NAME, CatalogClient.YCSB_BUCKET).toString();
     try {
       final Map<String, String> properties = new HashMap<>();
       Object o = getProperties().get(FILEIO_STORE);
       if ("aws".equals(o)) {
-        fileIO = FileIOCatalogClient.s3FileIO(properties);
+        // TODO hack for testing, plumb this correctly
+        bucket = "lst-pbafvfgrapl--usw2-az3--x-s3"; // s3 express bucket
+        fileIO = FileIOCatalogClient.s3FileIO(bucket, properties);
         maxFileSize = 0; // force CAS
         System.out.println("### S3 DIRECT ###");
       } else if ("gcp".equals(o)) {
-        fileIO = FileIOCatalogClient.gcsFileIO(properties);
+        fileIO = FileIOCatalogClient.gcsFileIO(bucket, properties);
         maxFileSize = 0; // force CAS
         System.out.println("### GCS DIRECT ###");
       } else if ("azure".equals(o)) {
-        fileIO = FileIOCatalogClient.azureFileIO(properties);
+        fileIO = FileIOCatalogClient.azureFileIO(bucket, properties);
         System.out.println("### AZURE DIRECT ###");
       } else {
         throw new IllegalArgumentException("Unknown fileio object: " + getProperties().get(FILEIO_STORE));

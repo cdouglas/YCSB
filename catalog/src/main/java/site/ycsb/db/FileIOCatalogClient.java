@@ -31,22 +31,26 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
 
   private static String WAREHOUSE_LOCATION;
 
-  private final String FILEIO_STORE = "fileio.store";
+  static final String FILEIO_STORE = "fileio.store";
+  static final String BUCKET_NAME = "fileio.bucket";
 
   @Override
   public void init() throws DBException {
+    String bucket = getProperties().getOrDefault(BUCKET_NAME, YCSB_BUCKET).toString();
     try {
       final Map<String, String> properties = Maps.newHashMap();
       final SupportsAtomicOperations io;
         Object o = getProperties().get(FILEIO_STORE);
         if ("aws".equals(o)) {
-          io = s3FileIO(properties);
+          // TODO hack for testing, plumb this correctly
+          bucket = "lst-pbafvfgrapl--usw2-az3--x-s3"; // s3 express bucket
+          io = s3FileIO(bucket, properties);
           System.out.println("### S3 ###");
         } else if ("gcp".equals(o)) {
-          io = gcsFileIO(properties);
+          io = gcsFileIO(bucket, properties);
           System.out.println("### GCS ###");
         } else if ("azure".equals(o)) {
-          io = azureFileIO(properties);
+          io = azureFileIO(bucket, properties);
           System.out.println("### AZURE ###");
         } else {
             throw new IllegalArgumentException("Unknown fileio object: " + getProperties().get(FILEIO_STORE));
@@ -66,7 +70,7 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
     }
   }
 
-  static ADLSFileIO azureFileIO(Map<String,String> properties) {
+  static ADLSFileIO azureFileIO(String bucket, Map<String,String> properties) {
     final File credFile = new File("/home/chris/work/.cloud/azure/lstnsgym-20250930.json");
     final LocationResolver az;
     final Map<String, String> azureProperties = new HashMap<>();
@@ -83,7 +87,7 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
       String containerName = System.getenv("AZURE_STORAGE_CONTAINER");
       az = new HackOnAHack(accountName, containerName);
     }
-    WAREHOUSE_LOCATION = az.location(YCSB_BUCKET + "/" + UNIQ_RUN);
+    WAREHOUSE_LOCATION = az.location(bucket + "/" + UNIQ_RUN);
     properties.put(CatalogProperties.WAREHOUSE_LOCATION, WAREHOUSE_LOCATION);
 
     final ADLSFileIO azFileIO = new ADLSFileIO();
@@ -91,9 +95,9 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
     return azFileIO;
   }
 
-  static GCSFileIO gcsFileIO(Map<String,String> properties) {
+  static GCSFileIO gcsFileIO(String bucket, Map<String,String> properties) {
     final File credFile = new File("/home/chris/work/.cloud/gcp/lst-consistency-8dd2dfbea73a.json");
-    WAREHOUSE_LOCATION = "gs://" + YCSB_BUCKET + "/" + UNIQ_RUN;
+    WAREHOUSE_LOCATION = "gs://" + bucket + "/" + UNIQ_RUN;
     properties.put(CatalogProperties.WAREHOUSE_LOCATION, WAREHOUSE_LOCATION);
     if (credFile.exists()) {
       try (FileInputStream creds = new FileInputStream(credFile)) {
@@ -108,8 +112,8 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
     return ret;
   }
 
-  static S3FileIO s3FileIO(Map<String,String> properties) {
-    WAREHOUSE_LOCATION = "s3://" + "lst-pbafvfgrapl" + "/" + UNIQ_RUN;
+  static S3FileIO s3FileIO(String bucket, Map<String,String> properties) {
+    WAREHOUSE_LOCATION = "s3://" + bucket + "/" + UNIQ_RUN;
     properties.put(CatalogProperties.WAREHOUSE_LOCATION, WAREHOUSE_LOCATION);
     final S3FileIO s3FileIO = new S3FileIO();
     s3FileIO.initialize(new HashMap<>());

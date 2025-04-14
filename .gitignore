@@ -27,6 +27,7 @@ output*
 # ignore terraform
 .terraform
 .terraform.lock.hcl
+.terraform.tfstate.lock.info
 # terraform.tfvars ?
 *.tfstate
 *.tfstate.backup
