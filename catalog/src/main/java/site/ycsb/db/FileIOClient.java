@@ -6,7 +6,6 @@ import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.io.AtomicOutputFile;
 import org.apache.iceberg.io.CAS;
 import org.apache.iceberg.io.InputFile;
-import org.apache.iceberg.io.PositionOutputStream;
 import org.apache.iceberg.io.SupportsAtomicOperations;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,12 +29,12 @@ public class FileIOClient extends DB {
   private static final Logger logger = LoggerFactory.getLogger(FileIOClient.class);
 
   private static final String FILEIO_STORE = "fileio.store";
-  private static final String FILEIO_STRATEGY = "fileio.strategy";
   private static final String MAX_ATTEMPTS = "fileio.max.attempts";
   private static final String FILE_SIZE = "fileio.file.size";
   private static final String MAX_LOG_SIZE = "fileio.max.log.size";
-  private static final String DELTA_SIZE = "fileio.file.size";
+  private static final String DELTA_SIZE = "fileio.delta.size";
   private static final String FILE_NAME = "fileio.file.name";
+  private static final String DEBUG_THREADS = "fileio.debug.threads"; // separate object per thread
 
   private static boolean inited = false;
 
@@ -48,7 +47,6 @@ public class FileIOClient extends DB {
   byte[] replScratch;
   byte[] deltaScratch;
   final Random rand = new Random();
-  AtomicOutputFile.Strategy strategy;
 
   @Override
   public void init() throws DBException {
@@ -58,9 +56,8 @@ public class FileIOClient extends DB {
     maxAttempts = Integer.parseInt(getProperties().getOrDefault(MAX_ATTEMPTS, Integer.toString(10)).toString());
     replScratch = new byte[baseSize];
     deltaScratch = new byte[deltaSize];
-    strategy = Enum.valueOf(AtomicOutputFile.Strategy.class,
-        getProperties().getOrDefault(FILEIO_STRATEGY, "CAS").toString());
     String bucket = getProperties().getOrDefault(FileIOCatalogClient.BUCKET_NAME, CatalogClient.YCSB_BUCKET).toString();
+    boolean debugThread = Boolean.parseBoolean(getProperties().getOrDefault(DEBUG_THREADS, "false").toString());
     try {
       final Map<String, String> properties = new HashMap<>();
       Object o = getProperties().get(FILEIO_STORE);
@@ -68,7 +65,7 @@ public class FileIOClient extends DB {
         // TODO hack for testing, plumb this correctly
         bucket = "lst-pbafvfgrapl--usw2-az3--x-s3"; // s3 express bucket
         fileIO = FileIOCatalogClient.s3FileIO(bucket, properties);
-        maxFileSize = 0; // force CAS
+        maxFileSize = 16 * 1024 * 1024;
         System.out.println("### S3 DIRECT ###");
       } else if ("gcp".equals(o)) {
         fileIO = FileIOCatalogClient.gcsFileIO(bucket, properties);
@@ -82,6 +79,10 @@ public class FileIOClient extends DB {
       }
       sacriFile = getProperties().getOrDefault(FILE_NAME,
           properties.get(CatalogProperties.WAREHOUSE_LOCATION) + "/" + "sacriFile").toString();
+      if (debugThread) {
+        sacriFile += "-" + Thread.currentThread().getId();
+      }
+      System.out.println("### " + sacriFile + " ###");
       synchronized (FileIOClient.class) {
         if (!inited) {
           InputFile in = fileIO.newInputFile(sacriFile);
@@ -132,9 +133,10 @@ public class FileIOClient extends DB {
     int attempts = 0;
     rand.nextBytes(deltaScratch);
     while (attempts++ < maxAttempts) {
+      logger.trace("update table: {}, key: {}", table, key);
       InputFile in = fileIO.newInputFile(sacriFile);
       try {
-        if (in.getLength() > maxFileSize) {
+        if (in.getLength() + deltaSize > maxFileSize) {
           // CAS
           rand.nextBytes(replScratch);
           readObject(in); // read file to merge
