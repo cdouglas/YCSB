@@ -5,3 +5,5 @@
 
 catalog-bench/
 catalog/target/ycsb-catalog-binding-0.18.0-SNAPSHOT.tar.gz
+
+workloads/lst

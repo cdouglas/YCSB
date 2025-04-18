@@ -65,7 +65,6 @@ public class FileIOClient extends DB {
         // TODO hack for testing, plumb this correctly
         bucket = "lst-pbafvfgrapl--usw2-az3--x-s3"; // s3 express bucket
         fileIO = FileIOCatalogClient.s3FileIO(bucket, properties);
-        maxFileSize = 16 * 1024 * 1024;
         System.out.println("### S3 DIRECT ###");
       } else if ("gcp".equals(o)) {
         fileIO = FileIOCatalogClient.gcsFileIO(bucket, properties);

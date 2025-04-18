@@ -196,6 +196,7 @@ public abstract class CatalogClient <C extends Catalog> extends DB {
             var tid = TableIdentifier.of(Namespace.empty(), key);
             var tx = catalog.buildTable(tid, SCHEMA).createOrReplaceTransaction();
             values.forEach((k, v) -> tx.updateProperties().set(k, v.toString()));
+            tx.commitTransaction();
           }
 
           System.out.println(txId + ") Committed");

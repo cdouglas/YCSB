@@ -49,6 +49,7 @@ WORKDIR /YCSB
 
 # Copy the benchmark files
 COPY . /YCSB/
+COPY workloads/lst /YCSB/workloads/lst
 
 # Ensure scripts are executable
 RUN chmod +x /YCSB/bin/lst.sh /YCSB/bin/ycsb.sh
