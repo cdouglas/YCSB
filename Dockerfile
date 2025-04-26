@@ -9,6 +9,7 @@ RUN apt-get update && \
       dbus-user-session \
       git \
       gnupg \
+      jq \
       lsb-release \
       openjdk-17-jdk-headless \
       python3-pip \

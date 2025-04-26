@@ -39,12 +39,14 @@ fileio.max.log.size=16775168
 fileio.delta.size=256
 # override file path
 # fileio.file.name=
+fileio.catalog.format=append
 
 ### DEBUGGING
 
 # Separate object pre thread (for debugging weird latency vs throughtput graphs)
 fileio.debug.threads=false
 # enable backoff code in YCSB
+# XXX false for debug
 fileio.ycsb.backoff=false
 
 
@@ -90,6 +92,7 @@ fieldlengthdistribution=constant
 # What proportion of operations are reads
 readproportion=0
 
+# LST set to 100% updates
 # What proportion of operations are updates
 updateproportion=1.0
 

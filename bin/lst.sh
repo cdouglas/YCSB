@@ -5,7 +5,6 @@ RESULTDIR=results
 AZURE_BUCKET=lst-consistency
 GCP_BUCKET=lst-consistency
 S3_BUCKET=casalog
-OUTDIR=$RESULTDIR/$CLOUD
 
 # redirect output
 exec > ${RESULTDIR}/out-$(date +"%Y-%m-%d_%H-%M-%S").txt 2>&1
@@ -53,7 +52,6 @@ fi
 
 fi
 
-mkdir -p "$OUTDIR"
 
 if [[ "$LOCAL_RUN" != true ]]; then
 # === Export cloud instance metadata if applicable ===
@@ -62,18 +60,25 @@ if [[ "$CLOUD" == "azure" ]]; then
   curl -s -H "Metadata: true" \
     "http://169.254.169.254/metadata/instance/compute?api-version=2021-02-01" \
     -o "$OUTDIR/nodeinfo.json"
+  VM=$(jq -r '.vmSize' nodeinfo.json | tr '_' '-')
 
 elif [[ "$CLOUD" == "aws" ]]; then
   echo "📋 Saving AWS instance metadata to $OUTDIR/nodeinfo.json..."
   curl -s "http://169.254.169.254/latest/dynamic/instance-identity/document" \
     -o "$OUTDIR/nodeinfo.json"
+  VM=$(jq -r '.instanceType' nodeinfo.json | tr '.' '-')
 
 elif [[ "$CLOUD" == "gcp" ]]; then
   echo "📋 Saving GCP instance metadata to $OUTDIR/nodeinfo.json..."
   curl -s -H "Metadata-Flavor: Google" \
     "http://metadata.google.internal/computeMetadata/v1/instance/?recursive=true" \
     -o "$OUTDIR/nodeinfo.json"
+  VM=$(basename $(jq -r '.machineType' nodeinfo.json))
+
 fi
+
+OUTDIR=$RESULTDIR/${CLOUD}_${VM}
+mkdir -p "$OUTDIR"
 
 fi
 
