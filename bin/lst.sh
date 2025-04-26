@@ -77,10 +77,15 @@ elif [[ "$CLOUD" == "gcp" ]]; then
 
 fi
 
-OUTDIR=$RESULTDIR/${CLOUD}_${VM}
-mkdir -p "$OUTDIR"
+OUTDIR=${RESULTDIR}/${CLOUD}_${VM}
+
+else
+
+OUTDIR=${RESULTDIR}/${CLOUD}
 
 fi
+
+mkdir -p "$OUTDIR"
 
 for THREADS in $(eval echo {$THREAD_RANGE}); do
   for ((i = 1; i <= RUNS; i++)); do
