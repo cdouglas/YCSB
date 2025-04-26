@@ -107,7 +107,7 @@ resource "aws_instance" "ycsb" {
   }
 }
 
-output "instance_ip" {
+output "vm_ip" {
   value = aws_instance.ycsb.public_ip
 }
 

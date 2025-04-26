@@ -12,10 +12,16 @@ if [[ "${1:-}" == "--local" ]]; then
   RUNS=1
   shift
 fi
+# CLOUD ∈ { azure, aws, gcp }
 CLOUD="${CLOUD:-${1:-}}"
+# x..y
 THREAD_RANGE="${THREAD_RANGE:-${2:-1..16}}"
+# iterations per thread
 RUNS="${RUNS:-${3:-10}}"
+# which YCSB client to use
 CLIENT="${CLIENT:-${4:-fileio}}"
+# how many concurrent clients to fork
+CONCUR="${CONCUR:-${5:-1}}"
 
 # Auto-detect cloud environment if not set
 if [[ "$LOCAL_RUN" != true ]]; then
@@ -69,13 +75,23 @@ fi
 
 for THREADS in $(eval echo {$THREAD_RANGE}); do
   for ((i = 1; i <= RUNS; i++)); do
-    TESTNAME="${CLOUD}_${THREADS}_run${i}"
-    echo "🚀 Running YCSB benchmark on ${CLOUD} with ${THREADS} threads (run ${i}/${RUNS})..."
-    ./bin/ycsb.sh run catalog-${CLIENT} -P workloads/lst \
-      -p fileio.store=${CLOUD} \
-      -p measurementtype=hdrhistogram+raw \
-      -p exportfile="${OUTDIR}/${TESTNAME}" \
-      -threads ${THREADS} | tee ${OUTDIR}/${TESTNAME}_raw
+    PIDS=()
+    for ((c = 0; c < CONCUR; c++)); do
+      TESTNAME="${CLOUD}_${THREADS}_run${i}_${CONCUR}"
+      echo "🚀 Running YCSB benchmark on ${CLOUD} with ${THREADS} threads (run ${i}/${RUNS}) ${CONCUR}..."
+      (
+      ./bin/ycsb.sh run catalog-${CLIENT} -P workloads/lst \
+        -p fileio.store=${CLOUD} \
+        -p measurementtype=hdrhistogram+raw \
+        -p exportfile="${OUTDIR}/${TESTNAME}" \
+        -threads ${THREADS} | tee ${OUTDIR}/${TESTNAME}_raw
+      ) &
+      PIDS+=($!)
+    done
+    # wait for concurrent clients to finish
+    for pid in "${PIDS[@]}"; do
+      wait "$pid"
+    done
     sleep 2
   done
 done

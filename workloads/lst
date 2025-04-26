@@ -39,8 +39,10 @@ fileio.max.log.size=16775168
 fileio.delta.size=256
 # override file path
 # fileio.file.name=
+#
+# XXX enabled per-thread for debugging
 # Separate object pre thread (for debugging weird latency vs throughtput graphs)
-fileio.debug.threads=false
+fileio.debug.threads=true
 
 
 # The name of the workload class to use
