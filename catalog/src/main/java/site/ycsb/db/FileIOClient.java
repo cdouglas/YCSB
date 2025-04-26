@@ -35,6 +35,7 @@ public class FileIOClient extends DB {
   private static final String DELTA_SIZE = "fileio.delta.size";
   private static final String FILE_NAME = "fileio.file.name";
   private static final String DEBUG_THREADS = "fileio.debug.threads"; // separate object per thread
+  private static final String YCSB_BACKOFF = "fileio.ycsb.backoff"; // separate object per thread
 
   private static boolean inited = false;
 
@@ -47,6 +48,7 @@ public class FileIOClient extends DB {
   byte[] replScratch;
   byte[] deltaScratch;
   final Random rand = new Random();
+  boolean ycsbBackoff;
 
   @Override
   public void init() throws DBException {
@@ -58,6 +60,7 @@ public class FileIOClient extends DB {
     deltaScratch = new byte[deltaSize];
     String bucket = getProperties().getOrDefault(FileIOCatalogClient.BUCKET_NAME, CatalogClient.YCSB_BUCKET).toString();
     boolean debugThread = Boolean.parseBoolean(getProperties().getOrDefault(DEBUG_THREADS, "false").toString());
+    ycsbBackoff = Boolean.parseBoolean(getProperties().getOrDefault(YCSB_BACKOFF, "true").toString());
     try {
       final Map<String, String> properties = new HashMap<>();
       Object o = getProperties().get(FILEIO_STORE);
@@ -148,14 +151,16 @@ public class FileIOClient extends DB {
         atomicOp(out, deltaScratch, AtomicOutputFile.Strategy.APPEND);
         return Status.OK;
       } catch (SupportsAtomicOperations.CASException | SupportsAtomicOperations.AppendException e) {
-        int delayMs = (int) Math.min(100 * Math.pow(2.0, attempts - 1), 60000);
-        int jitter = rand.nextInt(Math.max(1, (int) (delayMs * 0.1)));
-        try {
-          TimeUnit.MILLISECONDS.sleep(delayMs + jitter);
-        } catch (InterruptedException ignored) {
-          Thread.currentThread().interrupt();
-          return Status.ERROR;
-        };
+        if (ycsbBackoff) {
+          int delayMs = (int) Math.min(100 * Math.pow(2.0, attempts - 1), 60000);
+          int jitter = rand.nextInt(Math.max(1, (int) (delayMs * 0.1)));
+          try {
+            TimeUnit.MILLISECONDS.sleep(delayMs + jitter);
+          } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+            return Status.ERROR;
+          }
+        }
         continue;
       } catch (Exception e) {
           e.printStackTrace(System.out);

@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+RESULTDIR=results
+AZURE_BUCKET=lst-consistency
+GCP_BUCKET=lst-consistency
+S3_BUCKET=casalog
+OUTDIR=$RESULTDIR/$CLOUD
+
+# redirect output
+exec > ${RESULTDIR}/out-$(date +"%Y-%m-%d_%H-%M-%S").txt 2>&1
+
+
 # Optional: enable remote debugging
 # export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
 
@@ -43,12 +53,6 @@ fi
 
 fi
 
-RESULTDIR=results
-AZURE_BUCKET=lst-consistency
-GCP_BUCKET=lst-consistency
-S3_BUCKET=casalog
-
-OUTDIR=$RESULTDIR/$CLOUD
 mkdir -p "$OUTDIR"
 
 if [[ "$LOCAL_RUN" != true ]]; then

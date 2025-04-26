@@ -39,10 +39,13 @@ fileio.max.log.size=16775168
 fileio.delta.size=256
 # override file path
 # fileio.file.name=
-#
-# XXX enabled per-thread for debugging
+
+### DEBUGGING
+
 # Separate object pre thread (for debugging weird latency vs throughtput graphs)
-fileio.debug.threads=true
+fileio.debug.threads=false
+# enable backoff code in YCSB
+fileio.ycsb.backoff=false
 
 
 # The name of the workload class to use
