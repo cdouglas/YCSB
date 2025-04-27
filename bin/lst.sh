@@ -56,23 +56,23 @@ fi
 if [[ "$LOCAL_RUN" != true ]]; then
 # === Export cloud instance metadata if applicable ===
 if [[ "$CLOUD" == "azure" ]]; then
-  echo "📋 Saving Azure instance metadata to $OUTDIR/nodeinfo.json..."
+  echo "📋 Saving Azure instance metadata to nodeinfo.json..."
   curl -s -H "Metadata: true" \
     "http://169.254.169.254/metadata/instance/compute?api-version=2021-02-01" \
-    -o "$OUTDIR/nodeinfo.json"
+    -o "nodeinfo.json"
   VM=$(jq -r '.vmSize' nodeinfo.json | tr '_' '-')
 
 elif [[ "$CLOUD" == "aws" ]]; then
-  echo "📋 Saving AWS instance metadata to $OUTDIR/nodeinfo.json..."
+  echo "📋 Saving AWS instance metadata to nodeinfo.json..."
   curl -s "http://169.254.169.254/latest/dynamic/instance-identity/document" \
-    -o "$OUTDIR/nodeinfo.json"
+    -o "nodeinfo.json"
   VM=$(jq -r '.instanceType' nodeinfo.json | tr '.' '-')
 
 elif [[ "$CLOUD" == "gcp" ]]; then
-  echo "📋 Saving GCP instance metadata to $OUTDIR/nodeinfo.json..."
+  echo "📋 Saving GCP instance metadata to nodeinfo.json..."
   curl -s -H "Metadata-Flavor: Google" \
     "http://metadata.google.internal/computeMetadata/v1/instance/?recursive=true" \
-    -o "$OUTDIR/nodeinfo.json"
+    -o "nodeinfo.json"
   VM=$(basename $(jq -r '.machineType' nodeinfo.json))
 
 fi
@@ -86,6 +86,14 @@ OUTDIR=${RESULTDIR}/${CLOUD}
 fi
 
 mkdir -p "$OUTDIR"
+
+if [ -f srcinfo.json ]; then
+  mv srcinfo.json "$OUTDIR"
+fi
+
+if [ -f nodeinfo.json ]; then
+  mv nodeinfo.json $OUTDIR
+fi
 
 for THREADS in $(eval echo {$THREAD_RANGE}); do
   for ((i = 1; i <= RUNS; i++)); do

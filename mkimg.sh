@@ -18,9 +18,9 @@ build_iceberg() {
 # YCSB
 build_ycsb() {
   pushd ${YCSB_HOME}
-  pushd catalog
-  mvn clean
-  popd
+  # pushd catalog
+  # mvn clean
+  # popd
   # ignore exit code
   mvn -Psource-run -pl site.ycsb:$(echo $CLIENT | cut -d'-' -f 1)-binding -am package -DskipTests || true
 }

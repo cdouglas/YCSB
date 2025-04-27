@@ -93,7 +93,6 @@ resource "google_compute_instance" "benchmark_instance" {
       -e THREAD_RANGE="1..8" \
       -e RUNS="5" \
       -v /mnt/results:/YCSB/results \
-      --name benchmark-container \
       ${var.docker_image}
 
     # Copy results to GCS bucket for persistence

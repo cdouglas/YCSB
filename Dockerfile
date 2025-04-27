@@ -50,6 +50,9 @@ WORKDIR /YCSB
 
 # Copy the benchmark files
 COPY . /YCSB/
+# COPY ./bin /YCSB/bin
+# COPY ./core /YCSB/core
+# COPY ./catalog /YCSB/catalog
 COPY ./workloads/lst /YCSB/workloads/lst
 
 # Ensure scripts are executable
