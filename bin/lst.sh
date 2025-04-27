@@ -7,6 +7,7 @@ GCP_BUCKET=lst-consistency
 S3_BUCKET=casalog
 
 # redirect output
+mkdir -p ${RESULTDIR}
 exec > ${RESULTDIR}/out-$(date +"%Y-%m-%d_%H-%M-%S").txt 2>&1
 
 
