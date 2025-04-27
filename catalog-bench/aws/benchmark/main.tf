@@ -68,6 +68,10 @@ resource "aws_instance" "ycsb_vm" {
     chown -R ${var.ssh_user}:${var.ssh_user} /home/${var.ssh_user}/.ssh
     chmod 600 /home/${var.ssh_user}/.ssh/authorized_keys
 
+    # Give the user passwordless sudo access
+    echo "${var.ssh_user} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${var.ssh_user}
+    chmod 440 /etc/sudoers.d/${var.ssh_user}
+
     # Install Docker
     amazon-linux-extras install docker -y || apt-get update && apt-get install -y docker.io
     systemctl enable docker
@@ -76,10 +80,20 @@ resource "aws_instance" "ycsb_vm" {
     usermod -aG docker ${var.ssh_user}
     mkdir -p /mnt/results
 
+    # EC2 creds into the container (TODO why was this unnecessary before?)
+    apt install jq
+    ROLE=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/)
+    export AWS_ACCESS_KEY_ID=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/${ROLE} | jq -r .AccessKeyId)
+    export AWS_SECRET_ACCESS_KEY=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/${ROLE} | jq -r .SecretAccessKey)
+    export AWS_SESSION_TOKEN=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/${ROLE} | jq -r .Token)
+
     # Run benchmark container with volume mount
     docker run --rm \
       -e CLOUD=aws \
       -e S3_BUCKET=${var.s3_bucket_name} \
+      -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+      -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+      -e AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN \
       -v /mnt/results:/YCSB/results \
       ${var.docker_image}
   EOF
