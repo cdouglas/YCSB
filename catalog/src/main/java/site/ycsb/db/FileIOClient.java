@@ -64,7 +64,6 @@ public class FileIOClient extends DB {
     replScratch = new byte[baseSize];
     deltaScratch = new byte[deltaSize];
     String bucket = getProperties().getOrDefault(FileIOCatalogClient.BUCKET_NAME, CatalogClient.YCSB_BUCKET).toString();
-    System.out.println("bucket: " + bucket);
     boolean debugThread = Boolean.parseBoolean(getProperties().getOrDefault(DEBUG_THREADS, "false").toString());
     ycsbBackoff = Boolean.parseBoolean(getProperties().getOrDefault(YCSB_BACKOFF, "true").toString());
     System.out.println("ycsbBackoff: " + ycsbBackoff);
@@ -86,6 +85,7 @@ public class FileIOClient extends DB {
       } else {
         throw new IllegalArgumentException("Unknown fileio object: " + getProperties().get(FILEIO_STORE));
       }
+      System.out.println("bucket: " + bucket);
       sacriFile = getProperties().getOrDefault(FILE_NAME,
           properties.get(CatalogProperties.WAREHOUSE_LOCATION) + "/" + "sacriFile").toString();
       if (debugThread) {
