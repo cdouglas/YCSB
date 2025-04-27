@@ -83,9 +83,9 @@ resource "aws_instance" "ycsb_vm" {
     # EC2 creds into the container (TODO why was this unnecessary before?)
     apt install jq
     ROLE=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/)
-    export AWS_ACCESS_KEY_ID=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/${ROLE} | jq -r .AccessKeyId)
-    export AWS_SECRET_ACCESS_KEY=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/${ROLE} | jq -r .SecretAccessKey)
-    export AWS_SESSION_TOKEN=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/${ROLE} | jq -r .Token)
+    export AWS_ACCESS_KEY_ID=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/$ROLE | jq -r .AccessKeyId)
+    export AWS_SECRET_ACCESS_KEY=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/$ROLE | jq -r .SecretAccessKey)
+    export AWS_SESSION_TOKEN=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/$ROLE | jq -r .Token)
 
     # Run benchmark container with volume mount
     docker run --rm \
