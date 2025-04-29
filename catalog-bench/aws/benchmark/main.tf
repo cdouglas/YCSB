@@ -81,7 +81,7 @@ resource "aws_instance" "ycsb_vm" {
     mkdir -p /mnt/results
 
     # EC2 creds into the container (TODO why was this unnecessary before?)
-    apt install jq
+    yum install -y jq
     ROLE=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/)
     export AWS_ACCESS_KEY_ID=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/$ROLE | jq -r .AccessKeyId)
     export AWS_SECRET_ACCESS_KEY=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/$ROLE | jq -r .SecretAccessKey)
