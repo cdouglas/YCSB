@@ -87,7 +87,8 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
       String containerName = System.getenv("AZURE_STORAGE_CONTAINER");
       az = new HackOnAHack(accountName, containerName);
     }
-    WAREHOUSE_LOCATION = az.location(bucket + "/" + UNIQ_RUN);
+    final String prefix = properties.get(FileIOClient.TEST_RUN);
+    WAREHOUSE_LOCATION = az.location(bucket + "/" + prefix);
     properties.put(CatalogProperties.WAREHOUSE_LOCATION, WAREHOUSE_LOCATION);
 
     final ADLSFileIO azFileIO = new ADLSFileIO();
@@ -97,7 +98,8 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
 
   static GCSFileIO gcsFileIO(String bucket, Map<String,String> properties) {
     final File credFile = new File("/home/chris/work/.cloud/gcp/lst-consistency-8dd2dfbea73a.json");
-    WAREHOUSE_LOCATION = "gs://" + bucket + "/" + UNIQ_RUN;
+    final String prefix = properties.get(FileIOClient.TEST_RUN);
+    WAREHOUSE_LOCATION = "gs://" + bucket + "/" + prefix;
     properties.put(CatalogProperties.WAREHOUSE_LOCATION, WAREHOUSE_LOCATION);
     if (credFile.exists()) {
       try (FileInputStream creds = new FileInputStream(credFile)) {
@@ -113,7 +115,9 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
   }
 
   static S3FileIO s3FileIO(String bucket, Map<String,String> properties) {
-    WAREHOUSE_LOCATION = "s3://" + bucket + "/" + UNIQ_RUN;
+    // TODO elide UNIQ_RUN if FILE_NAME is set
+    final String prefix = properties.get(FileIOClient.TEST_RUN);
+    WAREHOUSE_LOCATION = "s3://" + bucket + "/" + prefix;
     properties.put(CatalogProperties.WAREHOUSE_LOCATION, WAREHOUSE_LOCATION);
     final S3FileIO s3FileIO = new S3FileIO();
     s3FileIO.initialize(new HashMap<>());

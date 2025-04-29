@@ -28,14 +28,15 @@ public class FileIOClient extends DB {
 
   private static final Logger logger = LoggerFactory.getLogger(FileIOClient.class);
 
-  private static final String FILEIO_STORE = "fileio.store";
-  private static final String MAX_ATTEMPTS = "fileio.max.attempts";
-  private static final String FILE_SIZE = "fileio.file.size";
-  private static final String MAX_LOG_SIZE = "fileio.max.log.size";
-  private static final String DELTA_SIZE = "fileio.delta.size";
-  private static final String FILE_NAME = "fileio.file.name";
-  private static final String DEBUG_THREADS = "fileio.debug.threads"; // separate object per thread
-  private static final String YCSB_BACKOFF = "fileio.ycsb.backoff"; // separate object per thread
+  static final String FILEIO_STORE = "fileio.store";
+  static final String MAX_ATTEMPTS = "fileio.max.attempts";
+  static final String FILE_SIZE = "fileio.file.size";
+  static final String MAX_LOG_SIZE = "fileio.max.log.size";
+  static final String DELTA_SIZE = "fileio.delta.size";
+  static final String FILE_NAME = "fileio.file.name";
+  static final String TEST_RUN = "fileio.test.run"; // common across separate JVMs in the same test run
+  static final String DEBUG_THREADS = "fileio.debug.threads"; // separate object per thread
+  static final String YCSB_BACKOFF = "fileio.ycsb.backoff"; // separate object per thread
 
   private static boolean inited = false;
 
@@ -67,8 +68,11 @@ public class FileIOClient extends DB {
     boolean debugThread = Boolean.parseBoolean(getProperties().getOrDefault(DEBUG_THREADS, "false").toString());
     ycsbBackoff = Boolean.parseBoolean(getProperties().getOrDefault(YCSB_BACKOFF, "true").toString());
     System.out.println("ycsbBackoff: " + ycsbBackoff);
+    final String testRun = getProperties().getOrDefault(TEST_RUN, FileIOCatalogClient.UNIQ_RUN).toString();
+    System.out.println("testRun: " + testRun);
     try {
       final Map<String, String> properties = new HashMap<>();
+      properties.put(TEST_RUN, testRun);
       Object o = getProperties().get(FILEIO_STORE);
       if ("aws".equals(o)) {
         // TODO hack for testing, plumb this correctly
@@ -95,10 +99,12 @@ public class FileIOClient extends DB {
       synchronized (FileIOClient.class) {
         if (!inited || debugThread) {
           InputFile in = fileIO.newInputFile(sacriFile);
-          AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
-          rand.nextBytes(replScratch);
-          atomicOp(out, replScratch, AtomicOutputFile.Strategy.CAS);
-          System.out.println("Created: " + sacriFile);
+          if (!in.exists()) {
+            AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
+            rand.nextBytes(replScratch);
+            atomicOp(out, replScratch, AtomicOutputFile.Strategy.CAS);
+            System.out.println("Created: " + sacriFile);
+          }
           inited = true;
         }
       }

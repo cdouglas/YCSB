@@ -9,7 +9,6 @@ S3_BUCKET=casalog
 # redirect output
 mkdir -p ${RESULTDIR}
 MYOUTPUT=${RESULTDIR}/out-$(date +"%Y-%m-%d_%H-%M-%S").log
-exec > ${MYOUTPUT} 2>&1
 
 
 # Optional: enable remote debugging
@@ -22,6 +21,11 @@ if [[ "${1:-}" == "--local" ]]; then
   LOCAL_RUN=true
   RUNS=1
   shift
+  # redirect to stdout, log file
+  exec > >(tee ${MYOUTPUT}) 2>&1
+else
+  # redirct output to log file
+  exec > ${MYOUTPUT} 2>&1
 fi
 # CLOUD ∈ { azure, aws, gcp }
 CLOUD="${CLOUD:-${1:-}}"
@@ -32,7 +36,7 @@ RUNS="${RUNS:-${3:-10}}"
 # which YCSB client to use
 CLIENT="${CLIENT:-${4:-fileio}}"
 # how many concurrent clients to fork
-CONCUR="${CONCUR:-${5:-1}}"
+JVM_PER_THREAD="${JVM_PER_THREAD:-${5:-false}}"
 
 # Auto-detect cloud environment if not set
 if [[ "$LOCAL_RUN" != true ]]; then
@@ -56,34 +60,34 @@ fi
 
 
 if [[ "$LOCAL_RUN" != true ]]; then
-# === Export cloud instance metadata if applicable ===
-if [[ "$CLOUD" == "azure" ]]; then
-  echo "📋 Saving Azure instance metadata to nodeinfo.json..."
-  curl -s -H "Metadata: true" \
-    "http://169.254.169.254/metadata/instance/compute?api-version=2021-02-01" \
-    -o "nodeinfo.json"
-  VM=$(jq -r '.vmSize' nodeinfo.json | tr '_' '-')
+  # === Export cloud instance metadata if applicable ===
+  if [[ "$CLOUD" == "azure" ]]; then
+    echo "📋 Saving Azure instance metadata to nodeinfo.json..."
+    curl -s -H "Metadata: true" \
+      "http://169.254.169.254/metadata/instance/compute?api-version=2021-02-01" \
+      -o "nodeinfo.json"
+    VM=$(jq -r '.vmSize' nodeinfo.json | tr '_' '-')
 
-elif [[ "$CLOUD" == "aws" ]]; then
-  echo "📋 Saving AWS instance metadata to nodeinfo.json..."
-  curl -s "http://169.254.169.254/latest/dynamic/instance-identity/document" \
-    -o "nodeinfo.json"
-  VM=$(jq -r '.instanceType' nodeinfo.json | tr '.' '-')
+  elif [[ "$CLOUD" == "aws" ]]; then
+    echo "📋 Saving AWS instance metadata to nodeinfo.json..."
+    curl -s "http://169.254.169.254/latest/dynamic/instance-identity/document" \
+      -o "nodeinfo.json"
+    VM=$(jq -r '.instanceType' nodeinfo.json | tr '.' '-')
 
-elif [[ "$CLOUD" == "gcp" ]]; then
-  echo "📋 Saving GCP instance metadata to nodeinfo.json..."
-  curl -s -H "Metadata-Flavor: Google" \
-    "http://metadata.google.internal/computeMetadata/v1/instance/?recursive=true" \
-    -o "nodeinfo.json"
-  VM=$(basename $(jq -r '.machineType' nodeinfo.json))
+  elif [[ "$CLOUD" == "gcp" ]]; then
+    echo "📋 Saving GCP instance metadata to nodeinfo.json..."
+    curl -s -H "Metadata-Flavor: Google" \
+      "http://metadata.google.internal/computeMetadata/v1/instance/?recursive=true" \
+      -o "nodeinfo.json"
+    VM=$(basename $(jq -r '.machineType' nodeinfo.json))
 
-fi
+  fi
 
-OUTDIR=${RESULTDIR}/${CLOUD}_${VM}
+  OUTDIR=${RESULTDIR}/${CLOUD}_${VM}
 
 else
 
-OUTDIR=${RESULTDIR}/${CLOUD}
+  OUTDIR=${RESULTDIR}/${CLOUD}
 
 fi
 
@@ -97,28 +101,50 @@ if [ -f nodeinfo.json ]; then
   mv nodeinfo.json $OUTDIR
 fi
 
-for THREADS in $(eval echo {$THREAD_RANGE}); do
-  for ((i = 1; i <= RUNS; i++)); do
-    PIDS=()
-    for ((c = 0; c < CONCUR; c++)); do
-      TESTNAME="${CLOUD}_${THREADS}_run${i}_${CONCUR}"
-      echo "🚀 Running YCSB benchmark on ${CLOUD} with ${THREADS} threads (run ${i}/${RUNS}) ${CONCUR}..."
-      (
+if [[ "$JVM_PER_THREAD" == "true" ]]; then
+  # JVM per thread
+  echo "Running JVM per thread... $RUNS"
+  for THREADS in $(eval echo {$THREAD_RANGE}); do
+    echo "DEBUG $THREADS / $THREAD_RANGE"
+    for ((i = 1; i <= RUNS; i++)); do
+      # triggers pipefail for some damn reason
+      PREFIX=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c8) || true
+      PIDS=()
+      for ((c = 1; c <= THREADS; c++)); do
+        TESTNAME="${CLOUD}_${THREADS}_run${i}_${c}"
+        echo "🚀 Running YCSB benchmark on ${CLOUD} with ${c}/${THREADS} JVMs (run ${i}/${RUNS})..."
+        (
+        ./bin/ycsb.sh run catalog-${CLIENT} -P workloads/lst \
+          -p fileio.store=${CLOUD} \
+          -p measurementtype=hdrhistogram+raw \
+          -p exportfile="${OUTDIR}/${TESTNAME}" \
+          -p fileio.test.run=${PREFIX} \
+          -threads 1 | tee ${OUTDIR}/${TESTNAME}_raw
+        ) &
+        PIDS+=($!)
+      done
+      # wait for concurrent clients to finish
+      for pid in "${PIDS[@]}"; do
+        wait "$pid"
+      done
+      sleep 2
+    done
+  done
+else
+  # all threads in the same JVM
+  for THREADS in $(eval echo {$THREAD_RANGE}); do
+    for ((i = 1; i <= RUNS; i++)); do
+      TESTNAME="${CLOUD}_${THREADS}_run${i}_1"
+      echo "🚀 Running YCSB benchmark on ${CLOUD} with ${THREADS} threads (run ${i}/${RUNS})..."
       ./bin/ycsb.sh run catalog-${CLIENT} -P workloads/lst \
         -p fileio.store=${CLOUD} \
         -p measurementtype=hdrhistogram+raw \
         -p exportfile="${OUTDIR}/${TESTNAME}" \
         -threads ${THREADS} | tee ${OUTDIR}/${TESTNAME}_raw
-      ) &
-      PIDS+=($!)
+      sleep 2
     done
-    # wait for concurrent clients to finish
-    for pid in "${PIDS[@]}"; do
-      wait "$pid"
-    done
-    sleep 2
   done
-done
+fi
 
 TARBALL="${CLOUD}_results_$(date +%s).tgz"
 BUCKET_PATH="ycsb-results/${TARBALL}"
