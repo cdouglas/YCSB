@@ -157,8 +157,8 @@ tar czf "$TARBALL" -C "$RESULTDIR" .
 
 cp $TARBALL $RESULTDIR
 
-if [ "$SKIP_UPLOAD" = true ]; then
-  echo "🚫 Upload skipped due to manual arguments."
+if [ "$LOCAL_RUN" = true ]; then
+  echo "🚫 Upload skipped: local run"
   exit 0
 fi
 
