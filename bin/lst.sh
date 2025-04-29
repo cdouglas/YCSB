@@ -124,7 +124,7 @@ TARBALL="${CLOUD}_results_$(date +%s).tgz"
 BUCKET_PATH="ycsb-results/${TARBALL}"
 
 # checkpoint our output
-cp $MYOUTPUT $RESULTDIR
+cp $MYOUTPUT $OUTDIR
 
 echo "📦 Compressing all results into $TARBALL..."
 tar czf "$TARBALL" -C "$RESULTDIR" .
