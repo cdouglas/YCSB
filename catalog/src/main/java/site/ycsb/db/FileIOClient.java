@@ -93,7 +93,7 @@ public class FileIOClient extends DB {
       }
       System.out.println("### " + sacriFile + " ###");
       synchronized (FileIOClient.class) {
-        if (!inited) {
+        if (!inited || debugThread) {
           InputFile in = fileIO.newInputFile(sacriFile);
           AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
           rand.nextBytes(replScratch);
@@ -102,7 +102,7 @@ public class FileIOClient extends DB {
           inited = true;
         }
       }
-    } catch (Exception e){
+    } catch (Exception e) {
       throw new DBException("Failed to load remote / init storage", e);
     }
   }
