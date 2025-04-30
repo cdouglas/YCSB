@@ -36,7 +36,7 @@ RUNS="${RUNS:-${3:-10}}"
 # which YCSB client to use
 CLIENT="${CLIENT:-${4:-fileio}}"
 # how many concurrent clients to fork
-JVM_PER_THREAD="${JVM_PER_THREAD:-${5:-false}}"
+JVM_PER_THREAD="${JVM_PER_THREAD:-${5:-true}}"
 
 # Auto-detect cloud environment if not set
 if [[ "$LOCAL_RUN" != true ]]; then
