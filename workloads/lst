@@ -46,10 +46,9 @@ fileio.catalog.format=append
 ### DEBUGGING
 
 # Separate object pre thread (for debugging weird latency vs throughtput graphs)
-# XXX true for debug
-fileio.debug.threads=true
+fileio.debug.threads=false
 # enable backoff code in YCSB
-# XXX false for debug
+# XXX YCSB backoff disabled
 fileio.ycsb.backoff=false
 
 
