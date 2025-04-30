@@ -100,10 +100,14 @@ public class FileIOClient extends DB {
         if (!inited || debugThread) {
           InputFile in = fileIO.newInputFile(sacriFile);
           if (!in.exists()) {
-            AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
-            rand.nextBytes(replScratch);
-            atomicOp(out, replScratch, AtomicOutputFile.Strategy.CAS);
-            System.out.println("Created: " + sacriFile);
+            try {
+              AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
+              rand.nextBytes(replScratch);
+              atomicOp(out, replScratch, AtomicOutputFile.Strategy.CAS);
+              System.out.println("Created: " + sacriFile);
+            } catch (SupportsAtomicOperations.CASException e) {
+              // ignore
+            }
           }
           inited = true;
         }
