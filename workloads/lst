@@ -34,9 +34,9 @@ fileio.max.attempts=5
 # base file size
 fileio.file.size=2048
 # default 16MB 16777216 - 2k default base
-# fileio.max.log.size=16775168
+fileio.max.log.size=16775168
 # Force CAS with Log format
-fileio.max.log.size=0
+# fileio.max.log.size=0
 # size of each append operatiog
 fileio.delta.size=256
 # override file path
