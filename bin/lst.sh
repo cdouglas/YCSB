@@ -8,7 +8,8 @@ S3_BUCKET=casalog
 
 # redirect output
 mkdir -p ${RESULTDIR}
-MYOUTPUT=${RESULTDIR}/out-$(date +"%Y-%m-%d_%H-%M-%S").log
+MYOUTFILE=out-$(date +"%Y-%m-%d_%H-%M-%S").log
+MYOUTPUT=${RESULTDIR}/$MYOUTFILE
 
 
 # Optional: enable remote debugging
@@ -150,7 +151,7 @@ TARBALL="${CLOUD}_results_$(date +%s).tgz"
 BUCKET_PATH="ycsb-results/${TARBALL}"
 
 # checkpoint our output
-cp $MYOUTPUT $OUTDIR
+gzip -c $MYOUTPUT > $OUTDIR/$MYOUTFILE.gz
 
 echo "📦 Compressing all results into $TARBALL..."
 tar czf "$TARBALL" -C "$RESULTDIR" .
