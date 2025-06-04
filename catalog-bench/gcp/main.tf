@@ -48,7 +48,7 @@ resource "google_compute_firewall" "benchmark_firewall" {
 # GCP VM Instance
 resource "google_compute_instance" "benchmark_instance" {
   name         = "ycsb-benchmark-instance"
-  machine_type = "n2-standard-4"  # More powerful machine for benchmarking
+  machine_type = var.instance_type
   tags         = ["benchmark"]
   zone         = var.gcp_zone     # Make sure this is a valid zone
 

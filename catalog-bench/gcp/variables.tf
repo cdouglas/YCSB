@@ -39,3 +39,8 @@ variable "docker_image" {
   # Replace with your actual image
   default     = "gcr.io/lst-consistency/ycsb-benchmark:latest"
 }
+
+variable "instance_type" {
+  type        = string
+  description = "VM instance type"
+}
