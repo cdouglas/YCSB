@@ -1,0 +1,5 @@
+resource_group_name     = "ycsb-catalog-bench-rg"
+location                = "West US"
+storage_account_name    = "lstnsgymx"
+storage_container_name  = "lstx-consistency"
+sas_expiry_duration     = "336h"
