@@ -21,7 +21,16 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install AWS CLI
-RUN pip3 install --no-cache-dir awscli
+RUN apt-get update && \
+    apt-get install -y curl unzip && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install AWS CLI v2 (official)
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip" && \
+    unzip /tmp/awscliv2.zip -d /tmp && \
+    /tmp/aws/install && \
+    rm -rf /tmp/aws /tmp/awscliv2.zip
+
 
 # from https://cloud.google.com/sdk/docs/install#deb
 # RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | \
@@ -61,12 +70,12 @@ RUN chmod +x /YCSB/bin/lst.sh /YCSB/bin/ycsb.sh
 # Set environment variables
 ENV CLOUD="" \
     THREAD_RANGE="1..16" \
-    RUNS="10" \
+    RUNS="5" \
     CLIENT="direct" \
     SKIP_UPLOAD="false" \
     GCP_BUCKET="lst-consistency" \
     S3_BUCKET="lst-pbafvfgrapl" \
-    AZURE_BUCKET="lst-consistency"
+    AZURE_BUCKET="lstx-consistency"
 
 # Entry point to benchmark runner
 ENTRYPOINT ["/bin/bash", "/YCSB/bin/lst.sh"]

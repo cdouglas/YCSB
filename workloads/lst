@@ -27,19 +27,23 @@
 # CoreWorkload.java or on the YCSB wiki page:
 # https://github.com/brianfrankcooper/YCSB/wiki/Core-Properties
 
+### FILEIO
+
 # from ENV
 # fileio.store=
-# attempts to commit
-fileio.max.attempts=5
-# base file size
+
+# LST: attempts to commit
+fileio.max.attempts=1
+# LST: base file size
 fileio.file.size=2048
-# default 16MB 16777216 - 2k default base
-fileio.max.log.size=16775168
-# Force CAS with Log format
+# LST: default 16MB 16777216 - 2k default base
+fileio.max.log.size=2536448
+#
+# LST: Force CAS with Log format
 # fileio.max.log.size=0
-# size of each append operatiog
+# LST: size of each append operation
 fileio.delta.size=256
-# override file path
+# LST: override file path
 # fileio.file.name=
 fileio.catalog.format=append
 
@@ -51,9 +55,28 @@ fileio.debug.threads=false
 # XXX YCSB backoff disabled
 fileio.ycsb.backoff=false
 
+# report CAS latency separately (default true)
+# reportlatencyforcas=true
+# DBWrapper: report latencies for each error code separately (see below)
+# reportlatencyforeacherror=false
+# latencytrackederrors="<comma separated strings of error codes>"
+
+### WORKLOAD
 
 # The name of the workload class to use
 workload=site.ycsb.workloads.CoreWorkload
+
+# Maximum execution time in seconds
+# LST: 5 min for overlapping, direct runs
+maxexecutiontime=300
+
+# There is no default setting for operationcount but it is
+# required to be set.
+# The number of operations to use during the run phase.
+#
+# LST: Bound execution time, not op count
+operationcount=1073741824
+
 
 # There is no default setting for recordcount but it is
 # required to be set.
@@ -61,11 +84,6 @@ workload=site.ycsb.workloads.CoreWorkload
 # the load phase or the number of records already in the
 # table before the run phase.
 recordcount=10
-
-# There is no default setting for operationcount but it is
-# required to be set.
-# The number of operations to use during the run phase.
-operationcount=500
 
 # The number of insertions to do, if different from recordcount.
 # Used with insertstart to grow an existing table.
@@ -128,9 +146,6 @@ hotspotdatafraction=0.2
 
 # Percentage of operations that access the hot set
 hotspotopnfraction=0.8
-
-# Maximum execution time in seconds
-#maxexecutiontime=
 
 # The name of the database table to run queries against
 table=usertable

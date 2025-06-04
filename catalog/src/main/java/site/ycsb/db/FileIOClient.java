@@ -161,7 +161,7 @@ public class FileIOClient extends DB {
           readObject(in); // read file to merge
           AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
           atomicOp(out, replScratch, AtomicOutputFile.Strategy.CAS);
-          return Status.OK;
+          return Status.OK_CAS;
         }
         // APPEND
         AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
@@ -179,8 +179,11 @@ public class FileIOClient extends DB {
             return Status.ERROR;
           }
         }
-        continue;
       } catch (Exception e) {
+          if (e.getMessage().contains("No such object:")) {
+            // GCP throwing these often enough that it's annoying
+            return Status.NOT_FOUND;
+          }
           e.printStackTrace(System.out);
           return Status.ERROR;
       }

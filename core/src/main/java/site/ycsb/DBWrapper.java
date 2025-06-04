@@ -35,11 +35,16 @@ public class DBWrapper extends DB {
   private final Measurements measurements;
   private final Tracer tracer;
 
+  private boolean reportLatencyForCAS = true;
   private boolean reportLatencyForEachError = false;
   private Set<String> latencyTrackedErrors = new HashSet<String>();
 
   private static final String REPORT_LATENCY_FOR_EACH_ERROR_PROPERTY = "reportlatencyforeacherror";
   private static final String REPORT_LATENCY_FOR_EACH_ERROR_PROPERTY_DEFAULT = "false";
+
+  // !#! LST hack
+  private static final String REPORT_LATENCY_FOR_EACH_CAS_PROPERTY = "reportlatencyforcas";
+  private static final String REPORT_LATENCY_FOR_EACH_CAS_PROPERTY_DEFAULT = "true";
 
   private static final String LATENCY_TRACKED_ERRORS_PROPERTY = "latencytrackederrors";
 
@@ -92,6 +97,10 @@ public class DBWrapper extends DB {
       this.reportLatencyForEachError = Boolean.parseBoolean(getProperties().
           getProperty(REPORT_LATENCY_FOR_EACH_ERROR_PROPERTY,
               REPORT_LATENCY_FOR_EACH_ERROR_PROPERTY_DEFAULT));
+
+      this.reportLatencyForCAS = Boolean.parseBoolean(getProperties().
+          getProperty(REPORT_LATENCY_FOR_EACH_CAS_PROPERTY,
+              REPORT_LATENCY_FOR_EACH_CAS_PROPERTY_DEFAULT));
 
       if (!reportLatencyForEachError) {
         String latencyTrackedErrorsProperty = getProperties().getProperty(LATENCY_TRACKED_ERRORS_PROPERTY, null);
@@ -173,7 +182,15 @@ public class DBWrapper extends DB {
   private void measure(String op, Status result, long intendedStartTimeNanos,
                        long startTimeNanos, long endTimeNanos) {
     String measurementName = op;
-    if (result == null || !result.isOk()) {
+    if (null == result) {
+      throw new IllegalArgumentException("No measurement found for " + op);
+    }
+    if (result.isOk()) {
+      // !#! record CAS operations separately
+      if (this.reportLatencyForCAS && Status.OK_CAS.equals(result)) {
+        measurementName = op + "-" + result.getName();
+      }
+    } else {
       if (this.reportLatencyForEachError ||
           this.latencyTrackedErrors.contains(result.getName())) {
         measurementName = op + "-" + result.getName();

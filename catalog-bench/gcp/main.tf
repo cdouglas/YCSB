@@ -90,7 +90,7 @@ resource "google_compute_instance" "benchmark_instance" {
     docker run --rm \
       -e CLOUD=gcp \
       -e GCP_BUCKET="${var.gcp_bucket_name}" \
-      -e THREAD_RANGE="1..8" \
+      -e THREAD_RANGE="1..16" \
       -e RUNS="5" \
       -v /mnt/results:/YCSB/results \
       ${var.docker_image}
