@@ -95,6 +95,7 @@ public class Status {
 
   public static final Status OK = new Status("OK", "The operation completed successfully.");
   public static final Status OK_CAS = new Status("CAS", "FileIO: CAS succeeded.");
+  public static final Status RATE_EXCEEDED = new Status("RATE_EXCEEDED", "Server throttle");
   public static final Status ERROR = new Status("ERROR", "The operation failed.");
   public static final Status NOT_FOUND = new Status("NOT_FOUND", "The requested record was not found.");
   public static final Status NOT_IMPLEMENTED = new Status("NOT_IMPLEMENTED", "The operation is not " +

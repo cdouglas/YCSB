@@ -24,6 +24,8 @@ import java.util.Set;
 import java.util.Vector;
 import java.util.concurrent.TimeUnit;
 
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
+
 public class FileIOClient extends DB {
 
   private static final Logger logger = LoggerFactory.getLogger(FileIOClient.class);
@@ -155,36 +157,35 @@ public class FileIOClient extends DB {
     while (attempts++ < maxAttempts) {
       logger.trace("update table: {}, key: {}", table, key);
       InputFile in = fileIO.newInputFile(sacriFile);
+      long startCAS = -1; // DEBUG
       try {
         if (in.getLength() + deltaSize > maxFileSize) {
           // CAS
-          final long startCAS = System.nanoTime();
-          System.out.println("CAS0 " + startCAS);
+          startCAS = System.nanoTime();
+          System.out.println("CAS0 " + System.currentTimeMillis());
           rand.nextBytes(replScratch);
           readObject(in); // read file to merge
-          System.out.println("CAS1 " + (System.nanoTime() - startCAS));
+          System.out.println("CAS1 " + NANOSECONDS.toMillis(System.nanoTime() - startCAS));
           AtomicOutputFile out = fileIO.newOutputFile(in);
-          System.out.println("CAS2 " + (System.nanoTime() - startCAS));
+          System.out.println("CAS2 " + NANOSECONDS.toMillis(System.nanoTime() - startCAS));
           atomicOp(out, replScratch, AtomicOutputFile.Strategy.CAS);
-          System.out.println("CAS3 " + (System.nanoTime() - startCAS));
+          System.out.println("CAS3 " + NANOSECONDS.toMillis(System.nanoTime() - startCAS));
           return Status.OK_CAS;
         }
         // APPEND
         AtomicOutputFile out = fileIO.newOutputFile(in);
         atomicOp(out, deltaScratch, AtomicOutputFile.Strategy.APPEND);
         return Status.OK;
-      } catch (SupportsAtomicOperations.CASException | SupportsAtomicOperations.AppendException e) {
-        if (ycsbBackoff) {
-          int delayMs = (int) Math.min(100 * Math.pow(2.0, attempts - 1), 60000);
-          int jitter = rand.nextInt(Math.max(1, (int) (delayMs * 0.1)));
-          logger.info("Backing off for {} ms", delayMs + jitter);
-          try {
-            TimeUnit.MILLISECONDS.sleep(delayMs + jitter);
-          } catch (InterruptedException ignored) {
-            Thread.currentThread().interrupt();
-            return Status.ERROR;
-          }
+      } catch (SupportsAtomicOperations.CASException e) {
+        maybeBackoff(attempts);
+        // DEBUG
+        System.out.println("CAS4 " + NANOSECONDS.toMillis(System.nanoTime() - startCAS));
+        if (e.getMessage().contains("Rate limit exceeded")) {
+          // Rough estimate for GCP
+          return Status.RATE_EXCEEDED;
         }
+      } catch (SupportsAtomicOperations.AppendException e) {
+        maybeBackoff(attempts);
       } catch (Exception e) {
           if (e.getMessage().contains("No such object:")) {
             // GCP throwing these often enough that it's annoying
@@ -195,6 +196,19 @@ public class FileIOClient extends DB {
       }
     }
     return Status.SERVICE_UNAVAILABLE;
+  }
+
+  private void maybeBackoff(int attempts) {
+    if (ycsbBackoff) {
+      int delayMs = (int) Math.min(100 * Math.pow(2.0, attempts - 1), 60000);
+      int jitter = rand.nextInt(Math.max(1, (int) (delayMs * 0.1)));
+      logger.info("Backing off for {} ms", delayMs + jitter);
+      try {
+        TimeUnit.MILLISECONDS.sleep(delayMs + jitter);
+      } catch (InterruptedException ignored) {
+        Thread.currentThread().interrupt();
+      }
+    }
   }
 
   private void readObject(InputFile in) throws IOException {
