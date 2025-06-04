@@ -96,6 +96,7 @@ public class FileIOClient extends DB {
         sacriFile += "-" + Thread.currentThread().getId();
       }
       System.out.println("### " + sacriFile + " ###");
+      System.out.println("CLOCK," + System.currentTimeMillis() + "," + System.nanoTime());
       synchronized (FileIOClient.class) {
         if (!inited || debugThread) {
           InputFile in = fileIO.newInputFile(sacriFile);
