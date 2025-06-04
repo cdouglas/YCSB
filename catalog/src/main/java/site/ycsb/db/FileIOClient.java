@@ -45,7 +45,7 @@ public class FileIOClient extends DB {
   int deltaSize;
   int maxFileSize;
   int maxAttempts;
-  SupportsAtomicOperations<CAS> fileIO;
+  SupportsAtomicOperations fileIO;
   byte[] replScratch;
   byte[] deltaScratch;
   final Random rand = new Random();
@@ -102,7 +102,7 @@ public class FileIOClient extends DB {
           InputFile in = fileIO.newInputFile(sacriFile);
           if (!in.exists()) {
             try {
-              AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
+              AtomicOutputFile out = fileIO.newOutputFile(in);
               rand.nextBytes(replScratch);
               atomicOp(out, replScratch, AtomicOutputFile.Strategy.CAS);
               System.out.println("Created: " + sacriFile);
@@ -158,14 +158,19 @@ public class FileIOClient extends DB {
       try {
         if (in.getLength() + deltaSize > maxFileSize) {
           // CAS
+          final long startCAS = System.nanoTime();
+          System.out.println("CAS0 " + startCAS);
           rand.nextBytes(replScratch);
           readObject(in); // read file to merge
-          AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
+          System.out.println("CAS1 " + (System.nanoTime() - startCAS));
+          AtomicOutputFile out = fileIO.newOutputFile(in);
+          System.out.println("CAS2 " + (System.nanoTime() - startCAS));
           atomicOp(out, replScratch, AtomicOutputFile.Strategy.CAS);
+          System.out.println("CAS3 " + (System.nanoTime() - startCAS));
           return Status.OK_CAS;
         }
         // APPEND
-        AtomicOutputFile<CAS> out = fileIO.newOutputFile(in);
+        AtomicOutputFile out = fileIO.newOutputFile(in);
         atomicOp(out, deltaScratch, AtomicOutputFile.Strategy.APPEND);
         return Status.OK;
       } catch (SupportsAtomicOperations.CASException | SupportsAtomicOperations.AppendException e) {
@@ -199,7 +204,7 @@ public class FileIOClient extends DB {
     }
   }
 
-  private void atomicOp(AtomicOutputFile<CAS> out, byte[] data, AtomicOutputFile.Strategy strategy) throws IOException {
+  private void atomicOp(AtomicOutputFile out, byte[] data, AtomicOutputFile.Strategy strategy) throws IOException {
     try (ByteArrayInputStream b = new ByteArrayInputStream(data)) {
       b.mark(data.length);
       CAS tok = out.prepare(() -> b, strategy);
