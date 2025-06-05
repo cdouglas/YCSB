@@ -33,9 +33,9 @@ CLOUD="${CLOUD:-${1:-}}"
 # x..y
 THREAD_RANGE="${THREAD_RANGE:-${2:-1..16}}"
 # iterations per thread
-RUNS="${RUNS:-${3:-10}}"
+RUNS="${RUNS:-${3:-5}}"
 # which YCSB client to use
-CLIENT="${CLIENT:-${4:-fileio}}"
+CLIENT="${CLIENT:-${4:-direct}}"
 # how many concurrent clients to fork
 JVM_PER_THREAD="${JVM_PER_THREAD:-${5:-true}}"
 
