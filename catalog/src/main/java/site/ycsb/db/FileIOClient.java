@@ -179,7 +179,7 @@ public class FileIOClient extends DB {
       } catch (SupportsAtomicOperations.CASException e) {
         maybeBackoff(attempts);
         // DEBUG
-        System.out.println("CAS4 " + NANOSECONDS.toMillis(System.nanoTime() - startCAS));
+        // System.out.println("CAS4 " + NANOSECONDS.toMillis(System.nanoTime() - startCAS));
         if (e.getMessage().contains("Rate limit exceeded")) {
           // Rough estimate for GCP
           return Status.RATE_EXCEEDED;
