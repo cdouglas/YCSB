@@ -43,7 +43,7 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
         Object o = getProperties().get(FILEIO_STORE);
         if ("aws".equals(o)) {
           // TODO hack for testing, plumb this correctly
-          bucket = "lst-pbafvfgrapl--usw2-az3--x-s3"; // s3 express bucket
+          // bucket = "lst-pbafvfgrapl--usw2-az3--x-s3"; // s3 express bucket
           io = s3FileIO(bucket, properties);
           System.out.println("### S3 ###");
         } else if ("gcp".equals(o)) {

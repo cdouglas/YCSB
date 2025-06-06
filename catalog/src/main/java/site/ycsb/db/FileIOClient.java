@@ -78,7 +78,7 @@ public class FileIOClient extends DB {
       Object o = getProperties().get(FILEIO_STORE);
       if ("aws".equals(o)) {
         // TODO hack for testing, plumb this correctly
-        bucket = "lst-pbafvfgrapl--usw2-az3--x-s3"; // s3 express bucket
+        // bucket = "lst-pbafvfgrapl--usw2-az3--x-s3"; // s3 express bucket
         fileIO = FileIOCatalogClient.s3FileIO(bucket, properties);
         System.out.println("### S3 DIRECT ###");
       } else if ("gcp".equals(o)) {
@@ -162,14 +162,14 @@ public class FileIOClient extends DB {
         if (in.getLength() + deltaSize > maxFileSize) {
           // CAS
           startCAS = System.nanoTime();
-          System.out.println("CAS0 " + System.currentTimeMillis());
+          // System.out.println("CAS0 " + System.currentTimeMillis());
           rand.nextBytes(replScratch);
           readObject(in); // read file to merge
-          System.out.println("CAS1 " + NANOSECONDS.toMillis(System.nanoTime() - startCAS));
+          // System.out.println("CAS1 " + NANOSECONDS.toMillis(System.nanoTime() - startCAS));
           AtomicOutputFile out = fileIO.newOutputFile(in);
-          System.out.println("CAS2 " + NANOSECONDS.toMillis(System.nanoTime() - startCAS));
+          // System.out.println("CAS2 " + NANOSECONDS.toMillis(System.nanoTime() - startCAS));
           atomicOp(out, replScratch, AtomicOutputFile.Strategy.CAS);
-          System.out.println("CAS3 " + NANOSECONDS.toMillis(System.nanoTime() - startCAS));
+          // System.out.println("CAS3 " + NANOSECONDS.toMillis(System.nanoTime() - startCAS));
           return Status.OK_CAS;
         }
         // APPEND

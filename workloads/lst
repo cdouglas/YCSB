@@ -31,13 +31,17 @@
 
 # from ENV
 # fileio.store=
+# fileio.bucket=lst-pbafvfgrapl--usw2-az3--x-s3
+# fileio.bucket=lst-consistency
 
 # LST: attempts to commit
 fileio.max.attempts=1
 # LST: base file size
 fileio.file.size=2048
 # LST: default 16MB 16777216 - 2k default base
-fileio.max.log.size=2536448
+# fileio.max.log.size=2536448
+# Set to 0 for CAS test
+fileio.max.log.size=0
 #
 # LST: Force CAS with Log format
 # fileio.max.log.size=0
