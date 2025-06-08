@@ -38,6 +38,10 @@ RUNS="${RUNS:-${3:-5}}"
 CLIENT="${CLIENT:-${4:-direct}}"
 # how many concurrent clients to fork
 JVM_PER_THREAD="${JVM_PER_THREAD:-${5:-true}}"
+# foreach update proportion
+UPD_PROP="${UPD_PROP:-1.0}"
+
+echo "CFG CLOUD:${CLOUD} THREAD_RANGE:${THREAD_RANGE} RUNS:${RUNS} CLIENT:${CLIENT} JVM:${JVM_PER_THREAD} UPD_PROP:$UPD_PROP"
 
 # Auto-detect cloud environment if not set
 if [[ "$LOCAL_RUN" != true ]]; then
@@ -102,6 +106,9 @@ if [ -f nodeinfo.json ]; then
   mv nodeinfo.json $OUTDIR
 fi
 
+# -p updateproportion=$UPDATE
+# -p readproportion=$(echo "scale=2; 1.0 - $UPDATE" | bc)
+
 if [[ "$JVM_PER_THREAD" == "true" ]]; then
   # JVM per thread
   echo "Running JVM per thread... $RUNS"
@@ -111,18 +118,22 @@ if [[ "$JVM_PER_THREAD" == "true" ]]; then
       # triggers pipefail for some damn reason
       PREFIX=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c8) || true
       PIDS=()
+      for u in $UPD_PROP; do
       for ((c = 1; c <= THREADS; c++)); do
-        TESTNAME="${CLOUD}_${THREADS}_run${i}_${c}"
+        TESTNAME="${CLOUD}_${THREADS}_run${i}_${c}_${u}"
         echo "🚀 Running YCSB benchmark on ${CLOUD} with ${c}/${THREADS} JVMs (run ${i}/${RUNS})..."
         (
         ./bin/ycsb.sh run catalog-${CLIENT} -P workloads/lst \
           -p fileio.store=${CLOUD} \
           -p measurementtype=hdrhistogram+raw \
           -p exportfile="${OUTDIR}/${TESTNAME}" \
+          -p updateproportion=${u} \
+          -p readproportion=$(echo "scale=2; 1.0 - $u" | bc) \
           -p fileio.test.run=${PREFIX} \
           -threads 1 | tee ${OUTDIR}/${TESTNAME}_raw
         ) &
         PIDS+=($!)
+      done
       done
       # wait for concurrent clients to finish
       for pid in "${PIDS[@]}"; do
