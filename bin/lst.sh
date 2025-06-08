@@ -119,27 +119,27 @@ if [[ "$JVM_PER_THREAD" == "true" ]]; then
       PREFIX=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c8) || true
       PIDS=()
       for u in $UPD_PROP; do
-      for ((c = 1; c <= THREADS; c++)); do
-        TESTNAME="${CLOUD}_${THREADS}_run${i}_${c}_${u}"
-        echo "🚀 Running YCSB benchmark on ${CLOUD} with ${c}/${THREADS} JVMs (run ${i}/${RUNS})..."
-        (
-        ./bin/ycsb.sh run catalog-${CLIENT} -P workloads/lst \
-          -p fileio.store=${CLOUD} \
-          -p measurementtype=hdrhistogram+raw \
-          -p exportfile="${OUTDIR}/${TESTNAME}" \
-          -p updateproportion=${u} \
-          -p readproportion=$(echo "scale=2; 1.0 - $u" | bc) \
-          -p fileio.test.run=${PREFIX} \
-          -threads 1 | tee ${OUTDIR}/${TESTNAME}_raw
-        ) &
-        PIDS+=($!)
+        for ((c = 1; c <= THREADS; c++)); do
+          TESTNAME="${CLOUD}_${THREADS}_run${i}_${c}_${u}"
+          echo "🚀 Running YCSB benchmark on ${CLOUD} with ${c}/${THREADS} JVMs (run ${i}/${RUNS})..."
+          (
+          ./bin/ycsb.sh run catalog-${CLIENT} -P workloads/lst \
+            -p fileio.store=${CLOUD} \
+            -p measurementtype=hdrhistogram+raw \
+            -p exportfile="${OUTDIR}/${TESTNAME}" \
+            -p updateproportion=${u} \
+            -p readproportion=$(echo "scale=2; 1.0 - $u" | bc) \
+            -p fileio.test.run=${PREFIX} \
+            -threads 1 | tee ${OUTDIR}/${TESTNAME}_raw
+          ) &
+          PIDS+=($!)
+        done
+        # wait for concurrent clients to finish
+        for pid in "${PIDS[@]}"; do
+          wait "$pid"
+        done
+        sleep 2
       done
-      done
-      # wait for concurrent clients to finish
-      for pid in "${PIDS[@]}"; do
-        wait "$pid"
-      done
-      sleep 2
     done
   done
 else
