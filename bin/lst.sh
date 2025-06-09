@@ -40,6 +40,9 @@ CLIENT="${CLIENT:-${4:-direct}}"
 JVM_PER_THREAD="${JVM_PER_THREAD:-${5:-true}}"
 # foreach update proportion
 UPD_PROP="${UPD_PROP:-1.0}"
+SAS_DIR="${SAS_DIR:-tokens}"
+SAS_EXPR="${SAS_EXPR:-client%d_20250527.json}"
+#SAS_KEYS="${SAS_KEYS:-""}"
 
 echo "CFG CLOUD:${CLOUD} THREAD_RANGE:${THREAD_RANGE} RUNS:${RUNS} CLIENT:${CLIENT} JVM:${JVM_PER_THREAD} UPD_PROP:$UPD_PROP"
 
@@ -120,6 +123,11 @@ if [[ "$JVM_PER_THREAD" == "true" ]]; then
       PIDS=()
       for u in $UPD_PROP; do
         for ((c = 1; c <= THREADS; c++)); do
+          if [ -d $SAS_DIR ]; then
+            KEY_PATH=$(printf "${SAS_DIR}/${SAS_EXPR}" $c)
+          else
+            KEY_PATH="NONE"
+          fi
           TESTNAME="${CLOUD}_${THREADS}_run${i}_${c}_${u}"
           echo "🚀 Running YCSB benchmark on ${CLOUD} with ${c}/${THREADS} JVMs (run ${i}/${RUNS})..."
           (
@@ -129,6 +137,7 @@ if [[ "$JVM_PER_THREAD" == "true" ]]; then
             -p exportfile="${OUTDIR}/${TESTNAME}" \
             -p updateproportion=${u} \
             -p readproportion=$(echo "scale=2; 1.0 - $u" | bc) \
+            -p fileio.key.path=${KEY_PATH} \
             -p fileio.test.run=${PREFIX} \
             -threads 1 | tee ${OUTDIR}/${TESTNAME}_raw
           ) &

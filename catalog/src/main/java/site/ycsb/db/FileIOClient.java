@@ -3,6 +3,8 @@ package site.ycsb.db;
 import org.apache.commons.io.output.NullOutputStream;
 import org.apache.curator.shaded.com.google.common.io.ByteStreams;
 import org.apache.iceberg.CatalogProperties;
+import org.apache.iceberg.azure.AzureProperties;
+import org.apache.iceberg.azure.adlsv2.AzureSAS;
 import org.apache.iceberg.io.AtomicOutputFile;
 import org.apache.iceberg.io.CAS;
 import org.apache.iceberg.io.InputFile;
@@ -15,6 +17,7 @@ import site.ycsb.DBException;
 import site.ycsb.Status;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
@@ -39,6 +42,7 @@ public class FileIOClient extends DB {
   static final String TEST_RUN = "fileio.test.run"; // common across separate JVMs in the same test run
   static final String DEBUG_THREADS = "fileio.debug.threads"; // separate object per thread
   static final String YCSB_BACKOFF = "fileio.ycsb.backoff"; // separate object per thread
+  static final String ACCOUNT_KEY_PATH = "fileio.key.path";
 
   private static boolean inited = false;
 
@@ -74,6 +78,13 @@ public class FileIOClient extends DB {
     System.out.println("testRun: " + testRun);
     try {
       final Map<String, String> properties = new HashMap<>();
+      if (getProperties().containsKey(ACCOUNT_KEY_PATH)) {
+        String saskey = getProperties().get(ACCOUNT_KEY_PATH).toString();
+        if (!saskey.equals("NONE")) {
+          System.out.println("saskey: " + saskey);
+          properties.put("azure.creds", saskey);
+        }
+      }
       properties.put(TEST_RUN, testRun);
       Object o = getProperties().get(FILEIO_STORE);
       if ("aws".equals(o)) {
@@ -157,11 +168,16 @@ public class FileIOClient extends DB {
     while (attempts++ < maxAttempts) {
       logger.trace("update table: {}, key: {}", table, key);
       InputFile in = fileIO.newInputFile(sacriFile);
-      long startCAS = -1; // DEBUG
+      // long startCAS = -1; // DEBUG
       try {
-        if (in.getLength() + deltaSize > maxFileSize) {
-          // CAS
-          startCAS = System.nanoTime();
+        final long len = in.getLength();
+        if (len <= baseSize) {
+          System.out.println("INTEGRITY ERROR len: " + len);
+          return Status.ERROR;
+        }
+        if (len + deltaSize > maxFileSize) {
+          // CAS TODO: Azure does not always report the correct length?
+          // startCAS = System.nanoTime();
           // System.out.println("CAS0 " + System.currentTimeMillis());
           rand.nextBytes(replScratch);
           readObject(in); // read file to merge

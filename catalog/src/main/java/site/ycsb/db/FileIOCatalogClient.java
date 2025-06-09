@@ -71,18 +71,19 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
   }
 
   static ADLSFileIO azureFileIO(String bucket, Map<String,String> properties) {
-    final File credFile = new File("/home/chris/work/.cloud/azure/lstnsgym-20250930.json");
+    final File credFile = new File(properties.getOrDefault("azure.creds", "/home/chris/work/.cloud/azure/lstnsgym-20250930.json"));
     final LocationResolver az;
     final Map<String, String> azureProperties = new HashMap<>();
     if (credFile.exists()) {
+      System.out.println("CREDS: from " + credFile);
       AzureSAS creds =
               AzureSAS.readCreds(credFile);
       azureProperties.put(
-              AzureProperties.ADLS_SAS_TOKEN_PREFIX + "lstnsgym.dfs.core.windows.net", creds.sasToken);
-
+          AzureProperties.ADLS_SAS_TOKEN_PREFIX + creds.account + ".dfs.core.windows.net", creds.sasToken);
       az = new AzureSAS.SasResolver(creds);
     } else {
       // TODO this is a dumb and lazy way to do this.
+      System.out.println("CREDS: from env");
       String accountName = System.getenv("AZURE_STORAGE_ACCOUNT");
       String containerName = System.getenv("AZURE_STORAGE_CONTAINER");
       az = new HackOnAHack(accountName, containerName);
