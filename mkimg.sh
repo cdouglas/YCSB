@@ -44,5 +44,5 @@ push_docker() {
 build_iceberg
 build_ycsb
 write_src_info
-build_docker
-push_docker
+# build_docker
+# push_docker

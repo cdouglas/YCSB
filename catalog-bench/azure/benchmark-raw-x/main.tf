@@ -106,6 +106,7 @@ resource "azurerm_linux_virtual_machine" "ycsb" {
 
     usermod -aG docker azureuser
 
+    DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y --no-install-recommends build-essential ca-certificates curl git gnupg jq lsb-release openjdk-17-jdk-headless software-properties-common ssh unzip wget
 

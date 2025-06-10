@@ -171,9 +171,12 @@ public class FileIOClient extends DB {
       // long startCAS = -1; // DEBUG
       try {
         final long len = in.getLength();
-        if (len <= baseSize) {
-          System.out.println("INTEGRITY ERROR len: " + len);
-          return Status.ERROR;
+        if (len < baseSize) {
+          // !#! Azure reporting incorrect length
+          if (len != 0) {
+            System.out.println("INTEGRITY ERROR len: " + len);
+          }
+          return Status.UNEXPECTED_STATE;
         }
         if (len + deltaSize > maxFileSize) {
           // CAS TODO: Azure does not always report the correct length?
