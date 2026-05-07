@@ -9,13 +9,31 @@ variable "location" {
 }
 
 variable "storage_account_name" {
-  description = "Base name of the storage account (must be globally unique, lowercase)"
+  description = "Base name (prefix) for the Premium block-blob SA; a random suffix is appended"
   type        = string
 }
 
 variable "storage_container_name" {
-  description = "Name of the blob container"
+  description = "Container on the Premium SA"
   type        = string
+}
+
+variable "standard_storage_account_name" {
+  description = "Standard ADLS storage account name (adopted via terraform import)"
+  type        = string
+  default     = "lstnsgym"
+}
+
+variable "standard_storage_account_resource_group" {
+  description = "Resource group of the Standard ADLS account"
+  type        = string
+  default     = "lst-consistency"
+}
+
+variable "standard_storage_container_name" {
+  description = "Container on the Standard SA"
+  type        = string
+  default     = "lst-ns-consistency"
 }
 
 variable "sas_expiry_duration" {

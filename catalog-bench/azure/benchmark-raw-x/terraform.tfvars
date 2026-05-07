@@ -1,7 +1,0 @@
-ssh_public_key_path = "~/.ssh/id_ed25519.pub"
-azure_region = "West US"
-docker_image = "cdouglas/catalog-bench:latest"
-storage_account_name="lstnsgymx3serug"
-storage_container_name="lstx-consistency"
-storage_account_resource_group="ycsb-catalog-bench-rg"
-vm_size="Standard_D16s_v3"

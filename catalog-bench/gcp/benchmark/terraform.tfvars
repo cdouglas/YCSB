@@ -1,0 +1,6 @@
+gcp_project         = "lst-consistency"
+gcp_region          = "us-west4"
+gcp_zone            = "us-west4-c"
+gcp_instance_type   = "n2-standard-16"
+ssh_user            = "gcpuser"
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"

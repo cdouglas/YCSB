@@ -3,8 +3,6 @@ package site.ycsb.db;
 import org.apache.commons.io.output.NullOutputStream;
 import org.apache.curator.shaded.com.google.common.io.ByteStreams;
 import org.apache.iceberg.CatalogProperties;
-import org.apache.iceberg.azure.AzureProperties;
-import org.apache.iceberg.azure.adlsv2.AzureSAS;
 import org.apache.iceberg.io.AtomicOutputFile;
 import org.apache.iceberg.io.CAS;
 import org.apache.iceberg.io.InputFile;
@@ -17,7 +15,6 @@ import site.ycsb.DBException;
 import site.ycsb.Status;
 
 import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
@@ -26,8 +23,6 @@ import java.util.Random;
 import java.util.Set;
 import java.util.Vector;
 import java.util.concurrent.TimeUnit;
-
-import static java.util.concurrent.TimeUnit.NANOSECONDS;
 
 public class FileIOClient extends DB {
 
@@ -96,6 +91,13 @@ public class FileIOClient extends DB {
         fileIO = FileIOCatalogClient.gcsFileIO(bucket, properties);
         maxFileSize = 0; // force CAS
         System.out.println("### GCS DIRECT ###");
+      } else if ("gcprapid".equals(o)) {
+        // GCS Rapid Storage (Zonal): CAS-only. The Rapid appendable-object protocol
+        // is single-writer-per-object and can silently lose bytes under concurrent
+        // takeover, so APPEND is unsafe (see iceberg/docs/atomic_io_gcs_rapid.md).
+        fileIO = FileIOCatalogClient.gcsFileIO(bucket, properties);
+        maxFileSize = 0; // force CAS
+        System.out.println("### GCS RAPID DIRECT (CAS only) ###");
       } else if ("azure".equals(o)) {
         fileIO = FileIOCatalogClient.azureFileIO(bucket, properties);
         System.out.println("### AZURE DIRECT ###");

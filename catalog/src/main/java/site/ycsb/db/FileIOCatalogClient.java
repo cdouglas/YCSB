@@ -1,8 +1,9 @@
 package site.ycsb.db;
 
 import com.google.api.client.util.Maps;
+import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.storage.Storage;
-import com.google.cloud.storage.testing.RemoteStorageHelper;
+import com.google.cloud.storage.StorageOptions;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.aws.s3.S3FileIO;
 import org.apache.iceberg.azure.AzureProperties;
@@ -11,9 +12,9 @@ import org.apache.iceberg.azure.adlsv2.AzureSAS;
 import org.apache.iceberg.azure.adlsv2.LocationResolver;
 import org.apache.iceberg.gcp.GCPProperties;
 import org.apache.iceberg.gcp.gcs.GCSFileIO;
-import org.apache.iceberg.io.CASCatalogFormat;
 import org.apache.iceberg.io.CatalogFormat;
 import org.apache.iceberg.io.FileIOCatalog;
+import org.apache.iceberg.io.ProtoCatalogFormat;
 import org.apache.iceberg.io.SupportsAtomicOperations;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,9 +47,9 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
           // bucket = "lst-pbafvfgrapl--usw2-az3--x-s3"; // s3 express bucket
           io = s3FileIO(bucket, properties);
           System.out.println("### S3 ###");
-        } else if ("gcp".equals(o)) {
+        } else if ("gcp".equals(o) || "gcprapid".equals(o)) {
           io = gcsFileIO(bucket, properties);
-          System.out.println("### GCS ###");
+          System.out.println("gcprapid".equals(o) ? "### GCS RAPID ###" : "### GCS ###");
         } else if ("azure".equals(o)) {
           io = azureFileIO(bucket, properties);
           System.out.println("### AZURE ###");
@@ -58,10 +59,10 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
       final String catalogLoc = WAREHOUSE_LOCATION + "/catalog";
       logger.info("WAREHOUSE: {}", WAREHOUSE_LOCATION);
       synchronized (FileIOCatalogClient.class) {
-        final CatalogFormat<?,?> format = new CASCatalogFormat();
+        final CatalogFormat<?,?> format = new ProtoCatalogFormat();
         // create empty catalog
         // format.empty(io.newInputFile(catalogLoc)).commit(io);
-        catalog = new FileIOCatalog("test", catalogLoc, null, format, io, Maps.newHashMap());
+        catalog = new FileIOCatalog("test", catalogLoc, format, io, Maps.newHashMap());
         catalog.initialize("YCSB-Bench", properties);
         initTables();
       }
@@ -104,7 +105,11 @@ public class FileIOCatalogClient extends CatalogClient<FileIOCatalog> {
     properties.put(CatalogProperties.WAREHOUSE_LOCATION, WAREHOUSE_LOCATION);
     if (credFile.exists()) {
       try (FileInputStream creds = new FileInputStream(credFile)) {
-        Storage storage = RemoteStorageHelper.create("lst-consistency", creds).getOptions().getService();
+        Storage storage = StorageOptions.newBuilder()
+            .setProjectId("lst-consistency")
+            .setCredentials(GoogleCredentials.fromStream(creds))
+            .build()
+            .getService();
         return new GCSFileIO(() -> storage, new GCPProperties());
       } catch (IOException e) {
         throw new UncheckedIOException(e);

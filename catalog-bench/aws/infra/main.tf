@@ -1,15 +1,12 @@
-
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
 }
 
-# Create S3 Express One Zone bucket
+# S3 Standard bucket (us-west-2)
 resource "aws_s3_bucket" "benchmark" {
-  bucket = var.s3_bucket_name
-
-  bucket_prefix         = null
-  force_destroy         = true
+  bucket        = var.s3_bucket_name
+  force_destroy = true
 
   object_lock_enabled = false
   tags = {
@@ -23,6 +20,17 @@ resource "aws_s3_bucket_ownership_controls" "ownership" {
 
   rule {
     object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+# S3 Express One Zone (Directory) bucket — adopted via:
+#   terraform import aws_s3_directory_bucket.express <var.s3_express_bucket_name>
+resource "aws_s3_directory_bucket" "express" {
+  bucket        = var.s3_express_bucket_name
+  force_destroy = true
+
+  location {
+    name = var.s3_express_az_id
   }
 }
 
@@ -63,6 +71,13 @@ resource "aws_iam_policy" "s3_policy" {
           "arn:aws:s3:::${var.s3_bucket_name}",
           "arn:aws:s3:::${var.s3_bucket_name}/*"
         ]
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "s3express:CreateSession"
+        ],
+        Resource = aws_s3_directory_bucket.express.arn
       }
     ]
   })
@@ -80,6 +95,10 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 
 output "s3_bucket_name" {
   value = aws_s3_bucket.benchmark.id
+}
+
+output "s3_express_bucket_name" {
+  value = aws_s3_directory_bucket.express.bucket
 }
 
 output "iam_instance_profile_name" {

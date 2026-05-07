@@ -5,19 +5,19 @@ provider "azurerm" {
 }
 
 resource "azurerm_resource_group" "ycsb" {
-  name     = "ycsb-rg-x"
+  name     = "ycsb-rg"
   location = var.azure_region
 }
 
 resource "azurerm_virtual_network" "ycsb" {
-  name                = "ycsb-vnet-x"
+  name                = "ycsb-vnet"
   address_space       = ["10.0.0.0/16"]
   location            = var.azure_region
   resource_group_name = azurerm_resource_group.ycsb.name
 }
 
 resource "azurerm_network_security_group" "ycsb" {
-  name                = "ycsb-nsg-x"
+  name                = "ycsb-nsg"
   location            = var.azure_region
   resource_group_name = azurerm_resource_group.ycsb.name
 
@@ -47,7 +47,7 @@ resource "azurerm_subnet_network_security_group_association" "ycsb" {
 }
 
 resource "azurerm_public_ip" "ycsb" {
-  name                = "ycsb-ip-x"
+  name                = "ycsb-ip"
   location            = var.azure_region
   resource_group_name = azurerm_resource_group.ycsb.name
   allocation_method   = "Static"
@@ -69,7 +69,7 @@ resource "azurerm_network_interface" "ycsb" {
 }
 
 resource "azurerm_linux_virtual_machine" "ycsb" {
-  name                  = "ycsb-vm-x"
+  name                  = "ycsb-vm"
   resource_group_name   = azurerm_resource_group.ycsb.name
   location              = var.azure_region
   size                  = var.vm_size
@@ -103,26 +103,40 @@ resource "azurerm_linux_virtual_machine" "ycsb" {
 
   custom_data = base64encode(<<-EOF
     #!/bin/bash
-
-    usermod -aG docker azureuser
-
-    DEBIAN_FRONTEND=noninteractive
+    set -eux
+    export TZ=Etc/UTC DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y --no-install-recommends build-essential ca-certificates curl git gnupg jq lsb-release openjdk-17-jdk-headless software-properties-common ssh unzip wget
-
+    apt-get install -y --no-install-recommends \
+      build-essential ca-certificates curl git jq \
+      maven openjdk-17-jdk-headless rsync ssh unzip wget
+    mkdir -p /mnt/results /YCSB
+    chown azureuser:azureuser /mnt/results /YCSB
   EOF
   )
 }
 
-data "azurerm_storage_account" "existing" {
-  name                = var.storage_account_name
-  resource_group_name = var.storage_account_resource_group
+# bench.sh hits both the Std and Premium SAs; grant the VM identity Blob Data
+# Contributor on both.
+data "azurerm_storage_account" "adls_standard" {
+  name                = var.adls_standard_account_name
+  resource_group_name = var.adls_standard_resource_group
 }
 
-resource "azurerm_role_assignment" "vm_blob_data_contributor" {
+data "azurerm_storage_account" "adls_premium" {
+  name                = var.adls_premium_account_name
+  resource_group_name = var.adls_premium_resource_group
+}
+
+resource "azurerm_role_assignment" "vm_std_blob_contributor" {
   principal_id         = azurerm_linux_virtual_machine.ycsb.identity[0].principal_id
   role_definition_name = "Storage Blob Data Contributor"
-  scope                = data.azurerm_storage_account.existing.id
+  scope                = data.azurerm_storage_account.adls_standard.id
+}
+
+resource "azurerm_role_assignment" "vm_premium_blob_contributor" {
+  principal_id         = azurerm_linux_virtual_machine.ycsb.identity[0].principal_id
+  role_definition_name = "Storage Blob Data Contributor"
+  scope                = data.azurerm_storage_account.adls_premium.id
 }
 
 output "vm_ip" {

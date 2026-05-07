@@ -34,3 +34,10 @@ output*
 
 # ignore result dir
 results/
+
+# ignore SAS tokens and on-VM run artifacts
+tokens/
+tokens.tgz
+srcinfo.json
+nodeinfo.json
+out-*.log

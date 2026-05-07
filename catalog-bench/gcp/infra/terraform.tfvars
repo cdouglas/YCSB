@@ -1,0 +1,5 @@
+gcp_project              = "lst-consistency"
+gcp_region               = "us-west4"
+gcp_zone                 = "us-west4-c"
+gcp_standard_bucket_name = "lst-uw4-std"
+gcp_rapid_bucket_name    = "lstx-consistency"

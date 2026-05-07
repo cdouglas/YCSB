@@ -1,139 +1,171 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RESULTDIR=results
-AZURE_BUCKET=lst-consistency
-GCP_BUCKET=lst-consistency
-S3_BUCKET=casalog
+# Run a single (CLOUD, TIER, CLIENT, MODE, AUTH) sweep cell on the local VM.
+#
+# Driven by env vars (defaults reflect Jan 2026 methodology):
+#   CLOUD         aws | azure | gcp                          (required: cloud provider for FileIO dispatch)
+#   TIER          std | x | rapid                            (default: std)
+#   CLIENT        direct | fileio                            (default: direct; raw FileIO vs full FileIOCatalog)
+#   MODE          cas | append                               (default: cas)
+#   AUTH          metal | sas                                (default: metal on AWS/GCP, sas on Azure)
+#   BUCKET        bucket name to pass via -p fileio.bucket   (required; bench.sh sets per TIER)
+#   THREAD_RANGE  shell brace expansion, e.g., 1..16         (default: 1..16)
+#   RUNS          trials per thread count                    (default: 5)
+#   JVM_PER_THREAD  true | false                             (default: true; one JVM per concurrent client)
+#   UPD_PROP      update proportion(s)                       (default: 1.0)
+#   SAS_DIR       dir holding SAS JSON files (Azure only)    (default: tokens)
+#   SAS_EXPR      printf template for SAS file per JVM       (default: client%d_20250527.json)
+#
+# Output: ${RESULTDIR}/${OUTDIR_BASE} where OUTDIR_BASE follows the 5-token
+# analysis convention: ${CLOUD_TAG}_${VM}_${CLIENT_TAG}_${MODE_TAG}_${AUTH}.
+# After all runs in this cell, tars to ${RESULTDIR}/${OUTDIR_BASE}.tgz.
+#
+# bench.sh fetches the tarball back via rsync; this script does NOT upload to
+# any cloud bucket.
 
-# redirect output
+RESULTDIR=${RESULTDIR:-results}
+
 mkdir -p ${RESULTDIR}
 MYOUTFILE=out-$(date +"%Y-%m-%d_%H-%M-%S").log
 MYOUTPUT=${RESULTDIR}/$MYOUTFILE
 
-
-# Optional: enable remote debugging
-# export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
-
-# === Determine cloud environment and thread range ===
 LOCAL_RUN=false
-
 if [[ "${1:-}" == "--local" ]]; then
   LOCAL_RUN=true
-  RUNS=1
+  RUNS=${RUNS:-1}
   shift
-  # redirect to stdout, log file
   exec > >(tee ${MYOUTPUT}) 2>&1
 else
-  # redirct output to log file
   exec > ${MYOUTPUT} 2>&1
 fi
-# CLOUD ∈ { azure, aws, gcp }
+
+# === Required + defaults ===
 CLOUD="${CLOUD:-${1:-}}"
-# x..y
 THREAD_RANGE="${THREAD_RANGE:-${2:-1..16}}"
-# iterations per thread
 RUNS="${RUNS:-${3:-5}}"
-# which YCSB client to use
 CLIENT="${CLIENT:-${4:-direct}}"
-# how many concurrent clients to fork
 JVM_PER_THREAD="${JVM_PER_THREAD:-${5:-true}}"
-# foreach update proportion
+TIER="${TIER:-std}"
+MODE="${MODE:-cas}"
 UPD_PROP="${UPD_PROP:-1.0}"
 SAS_DIR="${SAS_DIR:-tokens}"
 SAS_EXPR="${SAS_EXPR:-client%d_20250527.json}"
-#SAS_KEYS="${SAS_KEYS:-""}"
 
-echo "CFG CLOUD:${CLOUD} THREAD_RANGE:${THREAD_RANGE} RUNS:${RUNS} CLIENT:${CLIENT} JVM:${JVM_PER_THREAD} UPD_PROP:$UPD_PROP"
-
-# Auto-detect cloud environment if not set
-if [[ "$LOCAL_RUN" != true ]]; then
-if [[ -z "$CLOUD" ]]; then
+if [[ "$LOCAL_RUN" != true && -z "$CLOUD" ]]; then
   if curl -s -H Metadata:true "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | grep -q "compute"; then
-    echo "☁️ Detected Azure"
     CLOUD="azure"
   elif curl -s "http://169.254.169.254/latest/meta-data/" | grep -q "instance-id"; then
-    echo "☁️ Detected AWS"
     CLOUD="aws"
   elif curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/" | grep -q "instance"; then
-    echo "☁️ Detected GCP"
     CLOUD="gcp"
   else
-    echo "❌ Could not detect or infer cloud environment. Please set CLOUD or pass it as the first argument."
+    echo "❌ Could not detect cloud. Set CLOUD or pass it as the first argument."
     exit 1
   fi
 fi
 
+# AUTH default: metal on AWS/GCP, sas on Azure.
+if [[ -z "${AUTH:-}" ]]; then
+  if [[ "$CLOUD" == "azure" ]]; then AUTH=sas; else AUTH=metal; fi
 fi
 
+# BUCKET is required: per-TIER bucket name lives in bench.env, passed in by bench.sh.
+if [[ -z "${BUCKET:-}" ]]; then
+  echo "❌ BUCKET env var is required (per-TIER bucket name; bench.sh normally sets this)."
+  exit 1
+fi
 
+# === Tag derivation for the 5-token OUTDIR convention ===
+case "$CLOUD,$TIER" in
+  aws,std)         CLOUD_TAG=aws;       FILEIO_STORE=aws ;;
+  aws,x)           CLOUD_TAG=awsx;      FILEIO_STORE=aws ;;
+  azure,std)       CLOUD_TAG=azure;     FILEIO_STORE=azure ;;
+  azure,x)         CLOUD_TAG=azurex;    FILEIO_STORE=azure ;;
+  gcp,std)         CLOUD_TAG=gcp;       FILEIO_STORE=gcp ;;
+  gcp,rapid)       CLOUD_TAG=gcprapid;  FILEIO_STORE=gcprapid ;;
+  *) echo "❌ Unsupported CLOUD/TIER combination: $CLOUD/$TIER"; exit 1 ;;
+esac
+
+case "$CLIENT" in
+  direct) CLIENT_TAG=direct ;;
+  fileio) CLIENT_TAG=catalog ;;
+  *) echo "❌ Unknown CLIENT (must be direct|fileio): $CLIENT"; exit 1 ;;
+esac
+
+case "$MODE" in
+  cas)    MODE_TAG=CAS;    MAX_LOG_SIZE_OVERRIDE=0 ;;
+  append) MODE_TAG=append; MAX_LOG_SIZE_OVERRIDE="" ;;  # use workload default
+  *) echo "❌ Unknown MODE (must be cas|append): $MODE"; exit 1 ;;
+esac
+
+# Reject unsafe combinations (Rapid Storage cannot serve concurrent APPEND)
+if [[ "$CLOUD_TAG" == "gcprapid" && "$MODE" == "append" ]]; then
+  echo "❌ APPEND is unsafe on GCS Rapid Storage (single-writer protocol; silent byte loss on takeover)."
+  exit 1
+fi
+
+echo "CFG CLOUD:${CLOUD} TIER:${TIER} CLIENT:${CLIENT} MODE:${MODE} AUTH:${AUTH} \
+THREAD_RANGE:${THREAD_RANGE} RUNS:${RUNS} JVM:${JVM_PER_THREAD} BUCKET:${BUCKET}"
+
+# === Capture instance metadata ===
 if [[ "$LOCAL_RUN" != true ]]; then
-  # === Export cloud instance metadata if applicable ===
   if [[ "$CLOUD" == "azure" ]]; then
-    echo "📋 Saving Azure instance metadata to nodeinfo.json..."
     curl -s -H "Metadata: true" \
       "http://169.254.169.254/metadata/instance/compute?api-version=2021-02-01" \
       -o "nodeinfo.json"
     VM=$(jq -r '.vmSize' nodeinfo.json | tr '_' '-')
-
   elif [[ "$CLOUD" == "aws" ]]; then
-    echo "📋 Saving AWS instance metadata to nodeinfo.json..."
     curl -s "http://169.254.169.254/latest/dynamic/instance-identity/document" \
       -o "nodeinfo.json"
     VM=$(jq -r '.instanceType' nodeinfo.json | tr '.' '-')
-
   elif [[ "$CLOUD" == "gcp" ]]; then
-    echo "📋 Saving GCP instance metadata to nodeinfo.json..."
     curl -s -H "Metadata-Flavor: Google" \
       "http://metadata.google.internal/computeMetadata/v1/instance/?recursive=true" \
       -o "nodeinfo.json"
     VM=$(basename $(jq -r '.machineType' nodeinfo.json))
-
   fi
-
-  OUTDIR=${RESULTDIR}/${CLOUD}_${VM}
-
 else
-
-  OUTDIR=${RESULTDIR}/${CLOUD}
-
+  VM="${VM:-local}"
 fi
 
+OUTDIR_BASE="${CLOUD_TAG}_${VM}_${CLIENT_TAG}_${MODE_TAG}_${AUTH}"
+OUTDIR="${RESULTDIR}/${OUTDIR_BASE}"
 mkdir -p "$OUTDIR"
 
-if [ -f srcinfo.json ]; then
-  mv srcinfo.json "$OUTDIR"
+[[ -f srcinfo.json ]] && mv srcinfo.json "$OUTDIR" || true
+[[ -f nodeinfo.json ]] && mv nodeinfo.json "$OUTDIR" || true
+
+# === Build the YCSB invocation arg list ===
+YCSB_ARGS=(
+  -P workloads/lst
+  -p fileio.store=${FILEIO_STORE}
+  -p fileio.bucket=${BUCKET}
+  -p measurementtype=hdrhistogram+raw
+)
+if [[ -n "$MAX_LOG_SIZE_OVERRIDE" ]]; then
+  YCSB_ARGS+=( -p fileio.max.log.size=${MAX_LOG_SIZE_OVERRIDE} )
 fi
 
-if [ -f nodeinfo.json ]; then
-  mv nodeinfo.json $OUTDIR
-fi
-
-# -p updateproportion=$UPDATE
-# -p readproportion=$(echo "scale=2; 1.0 - $UPDATE" | bc)
-
+# === Run loop ===
 if [[ "$JVM_PER_THREAD" == "true" ]]; then
-  # JVM per thread
-  echo "Running JVM per thread... $RUNS"
+  echo "JVM-per-thread: $RUNS runs per thread count"
   for THREADS in $(eval echo {$THREAD_RANGE}); do
-    echo "DEBUG $THREADS / $THREAD_RANGE"
     for ((i = 1; i <= RUNS; i++)); do
-      # triggers pipefail for some damn reason
       PREFIX=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c8) || true
       PIDS=()
       for u in $UPD_PROP; do
         for ((c = 1; c <= THREADS; c++)); do
-          if [ -d $SAS_DIR ]; then
+          if [[ "$AUTH" == "sas" && -d "$SAS_DIR" ]]; then
             KEY_PATH=$(printf "${SAS_DIR}/${SAS_EXPR}" $c)
           else
             KEY_PATH="NONE"
           fi
-          TESTNAME="${CLOUD}_${THREADS}_run${i}_${c}_${u}"
-          echo "🚀 Running YCSB benchmark on ${CLOUD} with ${c}/${THREADS} JVMs (run ${i}/${RUNS})..."
+          TESTNAME="${CLOUD_TAG}_${THREADS}_run${i}_${c}_${u}"
+          echo "🚀 ${CLOUD_TAG} t=${THREADS} jvm=${c} run=${i}/${RUNS} mode=${MODE}"
           (
-          ./bin/ycsb.sh run catalog-${CLIENT} -P workloads/lst \
-            -p fileio.store=${CLOUD} \
-            -p measurementtype=hdrhistogram+raw \
+          ./bin/ycsb.sh run catalog-${CLIENT} \
+            "${YCSB_ARGS[@]}" \
             -p exportfile="${OUTDIR}/${TESTNAME}" \
             -p updateproportion=${u} \
             -p readproportion=$(echo "scale=2; 1.0 - $u" | bc) \
@@ -143,23 +175,19 @@ if [[ "$JVM_PER_THREAD" == "true" ]]; then
           ) &
           PIDS+=($!)
         done
-        # wait for concurrent clients to finish
-        for pid in "${PIDS[@]}"; do
-          wait "$pid"
-        done
+        for pid in "${PIDS[@]}"; do wait "$pid"; done
         sleep 2
       done
     done
   done
 else
-  # all threads in the same JVM
+  echo "Single-JVM-per-run: $RUNS runs per thread count"
   for THREADS in $(eval echo {$THREAD_RANGE}); do
     for ((i = 1; i <= RUNS; i++)); do
-      TESTNAME="${CLOUD}_${THREADS}_run${i}_1"
-      echo "🚀 Running YCSB benchmark on ${CLOUD} with ${THREADS} threads (run ${i}/${RUNS})..."
-      ./bin/ycsb.sh run catalog-${CLIENT} -P workloads/lst \
-        -p fileio.store=${CLOUD} \
-        -p measurementtype=hdrhistogram+raw \
+      TESTNAME="${CLOUD_TAG}_${THREADS}_run${i}_1"
+      echo "🚀 ${CLOUD_TAG} t=${THREADS} run=${i}/${RUNS} mode=${MODE}"
+      ./bin/ycsb.sh run catalog-${CLIENT} \
+        "${YCSB_ARGS[@]}" \
         -p exportfile="${OUTDIR}/${TESTNAME}" \
         -threads ${THREADS} | tee ${OUTDIR}/${TESTNAME}_raw
       sleep 2
@@ -167,49 +195,8 @@ else
   done
 fi
 
-TARBALL="${CLOUD}_results_$(date +%s).tgz"
-BUCKET_PATH="ycsb-results/${TARBALL}"
-
-# checkpoint our output
-gzip -c $MYOUTPUT > $OUTDIR/$MYOUTFILE.gz
-
-echo "📦 Compressing all results into $TARBALL..."
-tar czf "$TARBALL" -C "$RESULTDIR" .
-
-cp $TARBALL $RESULTDIR
-
-if [ "$LOCAL_RUN" = true ]; then
-  echo "🚫 Upload skipped: local run"
-  exit 0
-fi
-
-# === Upload logic ===
-upload_to_azure() {
-  echo "☁️ Uploading to Azure Blob Storage..."
-  azcopy copy "$TARBALL" "https://${AZURE_BUCKET}.blob.core.windows.net/${BUCKET_PATH}"
-}
-
-upload_to_aws() {
-  echo "☁️ Uploading to S3..."
-  aws s3 cp "$TARBALL" "s3://${S3_BUCKET}/${BUCKET_PATH}"
-}
-
-upload_to_gcp() {
-  echo "☁️ Uploading to GCS..."
-  gsutil cp "$TARBALL" "gs://${GCP_BUCKET}/${BUCKET_PATH}"
-}
-
-if [[ "$LOCAL_RUN" == true ]]; then
-  echo "🚫 Local run: skipping upload."
-  exit 0
-fi
-
-echo "🚚 Uploading final results archive..."
-case $CLOUD in
-  azure) upload_to_azure ;;
-  aws)   upload_to_aws ;;
-  gcp)   upload_to_gcp ;;
-  *)     echo "❌ Unknown cloud environment: $CLOUD"; exit 1 ;;
-esac
-
-echo "✅ All benchmarks complete and uploaded!"
+# === Tar the cell output; bench.sh fetches via rsync ===
+gzip -c $MYOUTPUT > "${OUTDIR}/${MYOUTFILE}.gz"
+TARBALL="${RESULTDIR}/${OUTDIR_BASE}.tgz"
+tar czf "$TARBALL" -C "$RESULTDIR" "$OUTDIR_BASE"
+echo "✅ Cell complete: ${TARBALL}"

@@ -28,28 +28,21 @@
 # https://github.com/brianfrankcooper/YCSB/wiki/Core-Properties
 
 ### FILEIO
-
-# from ENV
-# fileio.store=
-# fileio.bucket=lst-pbafvfgrapl--usw2-az3--x-s3
-# fileio.bucket=lst-consistency
-
-# LST: attempts to commit
-fileio.max.attempts=1
-# LST: base file size
-fileio.file.size=2048
-# LST: default 16MB 16777216 - 2k default base
-# fileio.max.log.size=2536448
-# Set to 0 for CAS test
-fileio.max.log.size=0
 #
-# LST: Force CAS with Log format
-# fileio.max.log.size=0
+# fileio.store and fileio.bucket are passed via -p at run time by bin/lst.sh.
+# CAS-vs-append mode is selected by the MODE env var consumed by bin/lst.sh,
+# which translates to -p fileio.max.log.size=0 (cas) or the workload default
+# (append).  Do NOT hand-edit fileio.max.log.size in this file.
+
+# LST: only one commit attempt per op (upper-bound throughput; no retry/backoff)
+fileio.max.attempts=1
+# LST: base file size (2 KiB catalog-sized object)
+fileio.file.size=2048
+# LST: max log size before CAS reset.  Default 16 MiB; bin/lst.sh sets to 0
+# for cas mode.  ~9900 256-byte appends fit within 16 MiB - 2 KiB base.
+fileio.max.log.size=16777216
 # LST: size of each append operation
 fileio.delta.size=256
-# LST: override file path
-# fileio.file.name=
-fileio.catalog.format=append
 
 ### DEBUGGING
 
