@@ -77,13 +77,34 @@ what the analysis pipeline at `../../YCSB-data/ycsb-analysis/` expects.
 
 ## Sweep matrix
 
-For each cloud, `bench.sh sweep` iterates the cross product:
+`bench.sh sweep` iterates the cross product `tiers × clients × modes` for the
+given cloud, skipping combinations the underlying FileIO doesn't support.
 
-| Cloud | Tiers | Clients | Modes | Cells |
-|-------|-------|---------|-------|-------|
-| AWS | std, x | direct, fileio | cas, append | 8 |
-| Azure | std, x | direct, fileio | cas, append | 8 |
-| GCP | std, rapid | direct, fileio | cas, append (rapid+append skipped) | 6 |
+`CLIENT` selects the **dimension** of the benchmark:
+- **`direct`** — raw FileIO atomic ops (`FileIOClient.java`). Measures the
+  cost of a single `CAS` or `APPEND` round-trip against the storage backend.
+- **`fileio`** — full `FileIOCatalog` over FileIO (`FileIOCatalogClient.java`).
+  Measures end-to-end multi-table catalog operations (`ProtoCatalogFormat`,
+  inline mode, log compaction) layered on the same atomic primitives.
+
+`MODE`-vs-`TIER` support matrix:
+
+| Cloud | Tier | CAS | APPEND | Why APPEND is skipped (when it is) |
+|-------|------|-----|--------|------------------------------------|
+| AWS   | std (S3 Standard) | ✓ | — | Not measured in Jan 2026 |
+| AWS   | x (S3 Express One Zone) | ✓ | ✓ | |
+| Azure | std (Blob Standard) | ✓ | ✓ | |
+| Azure | x (Premium BlockBlob) | ✓ | ✓ | |
+| GCP   | std (GCS Standard) | ✓ | — | `GCSFileIO.supportsAppend()==false`; objects are immutable |
+| GCP   | rapid (Rapid Zonal) | ✓ | — | Rapid appendable-object protocol is unsafe under contention; see `../iceberg/docs/docs/atomic_io_gcs_rapid.md` |
+
+With `SWEEP_CLIENTS="direct fileio"`, cells per cloud:
+
+| Cloud | Cells | Breakdown |
+|-------|-------|-----------|
+| AWS   | 6 | std×CAS, x×CAS, x×APPEND — each × 2 clients |
+| Azure | 8 | std×CAS, std×APPEND, x×CAS, x×APPEND — each × 2 clients |
+| GCP   | 4 | std×CAS, rapid×CAS — each × 2 clients |
 
 Each cell does 5 thread counts × 5 trials × 5-min runs ≈ 2 hr of run time
 plus per-cloud setup/destroy overhead.

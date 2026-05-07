@@ -281,6 +281,23 @@ cmd_status() {
   fi
 }
 
+# Returns 0 if the (cloud, tier, mode) combination is supported by the
+# underlying FileIO implementation, 1 otherwise.  Skip combinations:
+#   aws/std/append    — S3 standard has no append; Jan 2026 didn't measure it
+#   gcp/std/append    — GCSFileIO.supportsAppend() == false (immutable objects)
+#   gcp/rapid/append  — Rapid Storage appendable-object protocol is unsafe under
+#                       contention (single-writer; silent byte loss on takeover);
+#                       see iceberg/docs/docs/atomic_io_gcs_rapid.md
+mode_supported() {
+  local cloud="$1" tier="$2" mode="$3"
+  case "$cloud,$tier,$mode" in
+    aws,std,append)   return 1 ;;
+    gcp,std,append)   return 1 ;;
+    gcp,rapid,append) return 1 ;;
+    *)                return 0 ;;
+  esac
+}
+
 cmd_sweep() {
   local cloud="$1"
   cmd_up "$cloud"
@@ -288,8 +305,8 @@ cmd_sweep() {
   for tier in $(cloud_tiers "$cloud"); do
     for client in $SWEEP_CLIENTS; do
       for mode in $SWEEP_MODES; do
-        if [[ "$cloud" == "gcp" && "$tier" == "rapid" && "$mode" == "append" ]]; then
-          echo "skip: gcp/rapid/append (unsafe)"
+        if ! mode_supported "$cloud" "$tier" "$mode"; then
+          echo "skip: $cloud/$tier/$mode (not supported by FileIO impl)"
           continue
         fi
         cmd_run "$cloud" --tier="$tier" --client="$client" --mode="$mode"
