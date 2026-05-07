@@ -4,14 +4,15 @@ set -euo pipefail
 # bench.sh — single driver for the YCSB conditional-write benchmark refresh.
 #
 # Usage:
-#   bench.sh init   <cloud>            apply infra terraform once (idempotent; runs imports)
-#   bench.sh up     <cloud>            apply benchmark VM terraform
-#   bench.sh setup  <cloud>            rsync YCSB tree to the VM, mvn package on VM
-#   bench.sh run    <cloud> [opts]     run one cell via lst.sh on the VM
-#   bench.sh fetch  <cloud> [<dest>]   rsync /mnt/results/ from VM into ${RESULTS_ROOT}/<date>/
-#   bench.sh down   <cloud>            terraform destroy the VM (infra survives)
-#   bench.sh status <cloud>            show whether infra/VM exist
-#   bench.sh sweep  <cloud>            up + setup + run (matrix from bench.env) + fetch + down
+#   bench.sh init     <cloud> [--apply]    apply infra terraform once (idempotent; runs imports)
+#   bench.sh up       <cloud>              apply benchmark VM terraform
+#   bench.sh setup    <cloud>              rsync YCSB tree to the VM, mvn package on VM
+#   bench.sh run      <cloud> [opts]       run one cell via lst.sh on the VM
+#   bench.sh fetch    <cloud> [<dest>]     rsync /mnt/results/ from VM into ${RESULTS_ROOT}/<date>/
+#   bench.sh down     <cloud>              terraform destroy the VM (infra survives)
+#   bench.sh teardown <cloud> [--yes]      terraform destroy the infra (buckets, IAM, SAS) — DESTROYS DATA
+#   bench.sh status   <cloud>              show whether infra/VM exist
+#   bench.sh sweep    <cloud>              up + setup + run (matrix from bench.env) + fetch + down
 #
 # `run` opts (env or --flag):
 #   TIER   --tier=std|x|rapid     default: first entry of SWEEP_<CLOUD>_TIERS
@@ -117,7 +118,15 @@ rsync_from() {
 # === Subcommands ===
 
 cmd_init() {
-  local cloud="$1"
+  local cloud="$1"; shift || true
+  local apply=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --apply|-y) apply=true ;;
+      *) echo "❌ unknown opt: $1"; exit 1 ;;
+    esac
+    shift
+  done
   local dir; dir=$(infra_dir "$cloud")
   echo "==> terraform init in $dir"
   terraform -chdir="$dir" init -upgrade -input=false
@@ -147,17 +156,50 @@ cmd_init() {
       ;;
   esac
 
-  echo "==> terraform plan (must show zero diff for imported resources)"
-  terraform -chdir="$dir" plan -input=false -detailed-exitcode || {
-    code=$?
-    if [[ $code -eq 2 ]]; then
-      echo "==> diff present; review then run: terraform -chdir=$dir apply"
-      return 0
+  echo "==> terraform plan"
+  local planfile; planfile=$(mktemp)
+  terraform -chdir="$dir" plan -input=false -out="$planfile"
+
+  # Refuse to apply if the plan would destroy any resources (catches a bad import).
+  if terraform -chdir="$dir" show -json "$planfile" \
+       | grep -q '"actions":\["delete"\]\|"actions":\["delete","create"\]'; then
+    echo "❌ Plan would destroy or replace resources — refusing to apply." >&2
+    echo "   Inspect with: terraform -chdir=$dir show $planfile" >&2
+    rm -f "$planfile"
+    return 1
+  fi
+
+  if [[ "$apply" == "true" ]]; then
+    echo "==> terraform apply"
+    terraform -chdir="$dir" apply -input=false "$planfile"
+  else
+    echo "==> Plan looks safe (adds/in-place-updates only).  To apply:"
+    echo "    bench.sh init $cloud --apply"
+    echo "    OR: terraform -chdir=$dir apply $planfile"
+  fi
+  rm -f "$planfile"
+}
+
+cmd_teardown() {
+  local cloud="$1"; shift || true
+  local yes=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --yes|-y) yes=true ;;
+      *) echo "❌ unknown opt: $1"; exit 1 ;;
+    esac
+    shift
+  done
+  local dir; dir=$(infra_dir "$cloud")
+  echo "⚠️  This will destroy infra at $dir, including buckets and their data."
+  if [[ "$yes" != "true" ]]; then
+    read -r -p "Type 'destroy $cloud' to proceed: " confirm
+    if [[ "$confirm" != "destroy $cloud" ]]; then
+      echo "aborted."
+      return 1
     fi
-    return $code
-  }
-  echo "==> terraform apply"
-  terraform -chdir="$dir" apply -auto-approve -input=false
+  fi
+  terraform -chdir="$dir" destroy -auto-approve -input=false
 }
 
 cmd_up() {
@@ -266,7 +308,8 @@ CMD="$1"; shift
 for cloud_arg in "$@"; do
   if [[ "$cloud_arg" =~ ^(aws|azure|gcp)$ ]]; then
     case "$CMD" in
-      init|up|setup|fetch|down|status|sweep) "cmd_$CMD" "$cloud_arg" ;;
+      init|teardown) shift; "cmd_$CMD" "$cloud_arg" "$@"; break ;;
+      up|setup|fetch|down|status|sweep) "cmd_$CMD" "$cloud_arg" ;;
       run) shift; cmd_run "$cloud_arg" "$@"; break ;;
       *) echo "❌ unknown command: $CMD"; usage 1 ;;
     esac

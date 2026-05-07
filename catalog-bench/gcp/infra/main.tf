@@ -58,13 +58,23 @@ resource "google_storage_bucket" "standard" {
 # Rapid Zonal bucket — exists out-of-band from the appendable-objects PoC.
 # Adopt via:
 #   terraform import google_storage_bucket.rapid <var.gcp_rapid_bucket_name>
+#
+# Rapid buckets are zonal but the API models that as location = region (e.g.
+# "US-WEST4") plus custom_placement_config.data_locations = [zone] (e.g.
+# "US-WEST4-C").  Both must be uppercase in the declaration to match the
+# normalized form that GCS returns; otherwise terraform forces replacement.
 resource "google_storage_bucket" "rapid" {
   provider                    = google-beta
   name                        = var.gcp_rapid_bucket_name
-  location                    = var.gcp_zone     # zonal placement, required for RAPID
+  location                    = upper(var.gcp_region)
   storage_class               = "RAPID"
   uniform_bucket_level_access = true
   force_destroy               = true
+  public_access_prevention    = "enforced"
+
+  custom_placement_config {
+    data_locations = [upper(var.gcp_zone)]
+  }
 
   hierarchical_namespace {
     enabled = true
