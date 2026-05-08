@@ -273,13 +273,14 @@ cmd_setup() {
   echo "==> extracting on VM into /YCSB"
   ssh "${ssh_opts[@]}" "$user@$host" bash -s <<'REMOTE'
 set -eux
-rm -rf /YCSB
+# Clear contents (we can't rm -rf /YCSB itself; / is root-owned).  /YCSB
+# itself is created and chowned by the VM's startup script.
 mkdir -p /YCSB
-tar xzf /tmp/ycsb.tgz -C /tmp/
-mv /tmp/ycsb-catalog-binding-*/. /YCSB/
+find /YCSB -mindepth 1 -delete
+tar xzf /tmp/ycsb.tgz -C /YCSB --strip-components=1
 mv /tmp/lst.sh /YCSB/bin/lst.sh
 chmod +x /YCSB/bin/lst.sh /YCSB/bin/ycsb.sh
-rm -rf /tmp/ycsb.tgz /tmp/ycsb-catalog-binding-*
+rm -f /tmp/ycsb.tgz
 REMOTE
 
   if [[ "$cloud" == "azure" ]]; then
