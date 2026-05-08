@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage:
 #   bench.sh init     <cloud> [--apply]    apply infra terraform once (idempotent; runs imports)
 #   bench.sh up       <cloud>              apply benchmark VM terraform
-#   bench.sh setup    <cloud>              rsync YCSB tree to the VM, mvn package on VM
+#   bench.sh setup    <cloud> [--no-build]  build SNAPSHOTs + binding locally, rsync to VM
 #   bench.sh run      <cloud> [opts]       run one cell via lst.sh on the VM
 #   bench.sh fetch    <cloud> [<dest>]     rsync /mnt/results/ from VM into ${RESULTS_ROOT}/<date>/
 #   bench.sh down     <cloud>              terraform destroy the VM (infra survives)
@@ -223,15 +223,70 @@ cmd_up() {
 }
 
 cmd_setup() {
-  local cloud="$1"
-  echo "==> rsync YCSB tree to VM"
-  rsync_to "$cloud" "${YCSB_TREE}/" "/YCSB/"
-  echo "==> mvn package on VM"
-  ssh_to "$cloud" "cd /YCSB && mvn -pl :catalog-binding -am package -DskipTests"
+  local cloud="$1"; shift || true
+  local build=true
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --no-build) build=false ;;
+      *) echo "❌ unknown opt: $1"; exit 1 ;;
+    esac
+    shift
+  done
+
+  if [[ "$build" == "true" ]]; then
+    # Build the full closure on the workstation, where the SNAPSHOT artifacts
+    # live in ~/.m2.  The catalog-binding assembly produces a self-contained
+    # ~250 MB tarball at catalog/target/ycsb-catalog-binding-*.tar.gz that
+    # ships every JAR the VM needs (core, catalog-binding, all iceberg
+    # 1.11.0-SNAPSHOT jars).  Each step is idempotent.
+    echo "==> publishing iceberg SNAPSHOTs to ~/.m2"
+    ( cd "$ICEBERG_HOME" && \
+      ./gradlew publishToMavenLocal \
+        -x test -x integrationTest -x generateGitProperties )
+    echo "==> installing fileio-catalog SNAPSHOT to ~/.m2"
+    mvn -f "$FILEIO_CATALOG_HOME/pom.xml" -DskipTests -q install
+    echo "==> packaging YCSB catalog-binding tarball"
+    # dependency:copy-dependencies doesn't prune, so a stale jar would pollute
+    # the assembly.  Wipe target/ for the binding before re-packaging.
+    rm -rf "$YCSB_TREE/catalog/target"
+    mvn -f "$YCSB_TREE/pom.xml" -pl :catalog-binding -am -DskipTests -q package
+  fi
+
+  local tarball
+  tarball=$(ls -1 "$YCSB_TREE/catalog/target/ycsb-catalog-binding-"*.tar.gz 2>/dev/null | head -1)
+  if [[ -z "$tarball" || ! -f "$tarball" ]]; then
+    echo "❌ no catalog-binding tarball found at $YCSB_TREE/catalog/target/" >&2
+    echo "   run 'bench.sh setup $cloud' (without --no-build) to produce it." >&2
+    return 1
+  fi
+  local size; size=$(du -h "$tarball" | cut -f1)
+  echo "==> shipping $(basename "$tarball") ($size) to VM"
+
+  local user host
+  user=$(cloud_ssh_user "$cloud")
+  host=$(vm_host "$cloud")
+  local ssh_opts=( -o StrictHostKeyChecking=accept-new -i "$AWS_SSH_PRIVATE_KEY" )
+
+  scp "${ssh_opts[@]}" "$tarball"            "$user@$host:/tmp/ycsb.tgz"
+  scp "${ssh_opts[@]}" "$YCSB_TREE/bin/lst.sh" "$user@$host:/tmp/lst.sh"
+
+  echo "==> extracting on VM into /YCSB"
+  ssh "${ssh_opts[@]}" "$user@$host" bash -s <<'REMOTE'
+set -eux
+rm -rf /YCSB
+mkdir -p /YCSB
+tar xzf /tmp/ycsb.tgz -C /tmp/
+mv /tmp/ycsb-catalog-binding-*/. /YCSB/
+mv /tmp/lst.sh /YCSB/bin/lst.sh
+chmod +x /YCSB/bin/lst.sh /YCSB/bin/ycsb.sh
+rm -rf /tmp/ycsb.tgz /tmp/ycsb-catalog-binding-*
+REMOTE
+
   if [[ "$cloud" == "azure" ]]; then
     echo "==> copying SAS tokens to VM"
     rsync_to "$cloud" "${REPO_ROOT}/azure/tokens/" "/YCSB/tokens/"
   fi
+  echo "==> setup complete"
 }
 
 cmd_run() {
@@ -325,8 +380,8 @@ CMD="$1"; shift
 for cloud_arg in "$@"; do
   if [[ "$cloud_arg" =~ ^(aws|azure|gcp)$ ]]; then
     case "$CMD" in
-      init|teardown) shift; "cmd_$CMD" "$cloud_arg" "$@"; break ;;
-      up|setup|fetch|down|status|sweep) "cmd_$CMD" "$cloud_arg" ;;
+      init|setup|teardown) shift; "cmd_$CMD" "$cloud_arg" "$@"; break ;;
+      up|fetch|down|status|sweep) "cmd_$CMD" "$cloud_arg" ;;
       run) shift; cmd_run "$cloud_arg" "$@"; break ;;
       *) echo "❌ unknown command: $CMD"; usage 1 ;;
     esac

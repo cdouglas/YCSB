@@ -13,11 +13,12 @@ For the design and the May 2026 refresh context, see
 - Authenticated cloud sessions (`aws sso login`, `gcloud auth login`,
   `az login` — whichever clouds you'll target)
 - `~/.ssh/id_ed25519{,.pub}` (or edit `AWS_SSH_PRIVATE_KEY` in `bench.env`)
-- Iceberg + fileio-catalog SNAPSHOTs published locally:
-  ```bash
-  cd ../iceberg && ./gradlew publishToMavenLocal -x test -x integrationTest -x generateGitProperties
-  cd ../fileio-catalog && mvn -DskipTests install
-  ```
+- `bench.sh setup` does the local build itself (publishes iceberg SNAPSHOTs,
+  installs `iceberg-fileio-catalog`, packages `catalog-binding` into a
+  ~250 MB self-contained tarball), then `scp`s only the tarball + `bin/lst.sh`
+  to the VM and extracts there. No mvn on the VM, no rsync of the full YCSB
+  source tree. Pass `--no-build` to skip the local build (e.g., re-deploying
+  to a fresh VM with the same artifacts).
 
 ## Configure
 
@@ -62,7 +63,7 @@ Or step-by-step (each step is independent and resumable):
 
 ```bash
 bin/bench.sh up    gcp                      # provision the VM
-bin/bench.sh setup gcp                      # rsync YCSB tree, mvn package on VM
+bin/bench.sh setup gcp                      # build locally, ship tarball + lst.sh, extract on VM
 bin/bench.sh run   gcp --tier=rapid --client=direct --mode=cas
 bin/bench.sh fetch gcp                      # rsync /mnt/results/ → ./results/<UTC>/gcp/
 bin/bench.sh down  gcp                      # destroy the VM
@@ -158,4 +159,8 @@ upper-bound throughput), all match the Jan 2026 methodology.
   retry loop gives up after ~5 min.
 - **Azure SAS tokens stale** — re-run `bin/bench.sh init azure --apply` to
   regenerate (the SAS data sources renew on each `apply`).
-- **Build fails on the VM** — `bench.sh setup` does `mvn -pl :catalog-binding -am package`; first run downloads the dependency closure (~3-5 min). If it errors, `ssh` to the VM and inspect `~/.m2`.
+- **Local build fails during setup** — `bench.sh setup` runs the iceberg
+  `publishToMavenLocal` and the catalog-binding `mvn package` on your
+  workstation. Network errors there block the deploy. Re-run; or invoke the
+  failing step directly to see the full output. After a successful build,
+  `--no-build` skips this on subsequent setups.
