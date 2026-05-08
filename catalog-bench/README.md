@@ -69,6 +69,22 @@ bin/bench.sh fetch gcp                      # rsync /mnt/results/ → ./results/
 bin/bench.sh down  gcp                      # destroy the VM
 ```
 
+### Disconnect / reconnect
+
+`bench.sh run` launches `lst.sh` on the VM via `nohup` (detached from the
+SSH session) and then blocks on the workstation by polling. **If the
+workstation disconnects, the on-VM benchmark keeps going** — only the
+local poll loop dies. Reconnect with:
+
+```bash
+bin/bench.sh status gcp     # is something running? what cell? last 10 log lines
+bin/bench.sh tail   gcp     # follow the live log
+bin/bench.sh wait   gcp     # resume blocking until the in-flight cell finishes
+```
+
+`bench.sh run --no-wait` returns immediately after launching. To kill
+an in-flight run cleanly, `ssh` to the VM and `kill $(cat /YCSB/results/.bench.pid)`.
+
 Result tarballs land at:
 ```
 catalog-bench/results/<UTC-timestamp>/<cloud>/<CLOUD_TAG>_<VM>_<CLIENT_TAG>_<MODE>_<AUTH>.tgz
@@ -92,7 +108,7 @@ given cloud, skipping combinations the underlying FileIO doesn't support.
 
 | Cloud | Tier | CAS | APPEND | Why APPEND is skipped (when it is) |
 |-------|------|-----|--------|------------------------------------|
-| AWS   | std (S3 Standard) | ✓ | — | Not measured in Jan 2026 |
+| AWS   | std (S3 Standard) | ✓ | — | S3 Standard has no append primitive (only full-object PUT or multipart upload, both replace) |
 | AWS   | x (S3 Express One Zone) | ✓ | ✓ | |
 | Azure | std (Blob Standard) | ✓ | ✓ | |
 | Azure | x (Premium BlockBlob) | ✓ | ✓ | |

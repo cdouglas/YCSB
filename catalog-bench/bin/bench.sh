@@ -7,12 +7,21 @@ set -euo pipefail
 #   bench.sh init     <cloud> [--apply]    apply infra terraform once (idempotent; runs imports)
 #   bench.sh up       <cloud>              apply benchmark VM terraform
 #   bench.sh setup    <cloud> [--no-build]  build SNAPSHOTs + binding locally, rsync to VM
-#   bench.sh run      <cloud> [opts]       run one cell via lst.sh on the VM
+#   bench.sh run      <cloud> [opts]       run one cell via lst.sh on the VM (detached, blocks until done)
+#   bench.sh wait     <cloud>              block until the in-flight cell on the VM finishes
+#   bench.sh tail     <cloud>              follow the live log of the in-flight cell
 #   bench.sh fetch    <cloud> [<dest>]     rsync /mnt/results/ from VM into ${RESULTS_ROOT}/<date>/
 #   bench.sh down     <cloud>              terraform destroy the VM (infra survives)
 #   bench.sh teardown <cloud> [--yes]      terraform destroy the infra (buckets, IAM, SAS) — DESTROYS DATA
-#   bench.sh status   <cloud>              show whether infra/VM exist
+#   bench.sh status   <cloud>              show infra + VM + in-flight benchmark state
 #   bench.sh sweep    <cloud>              up + setup + run (matrix from bench.env) + fetch + down
+#
+# Disconnect / reconnect:
+#   'run' launches lst.sh on the VM via nohup (detached from the SSH session)
+#   and then blocks the workstation by polling.  If the workstation
+#   disconnects, the on-VM benchmark keeps going.  Reconnect with
+#   'bench.sh status <cloud>' (live tail) or 'bench.sh wait <cloud>'
+#   (resume blocking).  'bench.sh tail <cloud>' streams the log.
 #
 # `run` opts (env or --flag):
 #   TIER   --tier=std|x|rapid     default: first entry of SWEEP_<CLOUD>_TIERS
@@ -294,6 +303,7 @@ cmd_run() {
   local cloud="$1"; shift
   local tier=std client=direct mode=cas
   local thread_range="$SWEEP_THREAD_RANGE" runs="$SWEEP_RUNS"
+  local block=true
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --tier=*)    tier="${1#*=}" ;;
@@ -301,15 +311,77 @@ cmd_run() {
       --mode=*)    mode="${1#*=}" ;;
       --threads=*) thread_range="${1#*=}" ;;
       --runs=*)    runs="${1#*=}" ;;
+      --no-wait)   block=false ;;
       *) echo "❌ unknown opt: $1"; exit 1 ;;
     esac
     shift
   done
   local bucket; bucket=$(cloud_bucket_for_tier "$cloud" "$tier")
-  echo "==> run $cloud tier=$tier client=$client mode=$mode bucket=$bucket"
-  ssh_to "$cloud" \
-    "cd /YCSB && CLOUD=$cloud TIER=$tier CLIENT=$client MODE=$mode \
-      BUCKET='$bucket' THREAD_RANGE=$thread_range RUNS=$runs ./bin/lst.sh"
+
+  # Refuse to overwrite an in-flight run on the same VM.
+  local existing_pid
+  existing_pid=$(ssh_to "$cloud" "cat /YCSB/results/.bench.pid 2>/dev/null" || true)
+  existing_pid=$(echo "$existing_pid" | tr -d '[:space:]')
+  if [[ -n "$existing_pid" ]] && ssh_to "$cloud" "kill -0 $existing_pid 2>/dev/null"; then
+    echo "❌ benchmark already running on $cloud (PID $existing_pid)" >&2
+    echo "   bench.sh wait $cloud   to block until it finishes" >&2
+    echo "   bench.sh tail $cloud   to follow its log" >&2
+    return 1
+  fi
+
+  local cell="${cloud}_${tier}_${client}_${mode}"
+  echo "==> launching cell $cell on $cloud (bucket=$bucket, threads=$thread_range, runs=$runs)"
+
+  # nohup + detach so the workstation can disconnect without killing lst.sh.
+  ssh_to "$cloud" "
+    set -e
+    cd /YCSB
+    rm -f results/.bench.pid results/.bench.cell results/.bench.log
+    echo '$cell' > results/.bench.cell
+    nohup env CLOUD='$cloud' TIER='$tier' CLIENT='$client' MODE='$mode' \\
+      BUCKET='$bucket' THREAD_RANGE='$thread_range' RUNS='$runs' \\
+      ./bin/lst.sh </dev/null >results/.bench.log 2>&1 &
+    echo \$! > results/.bench.pid
+  "
+  local pid
+  pid=$(ssh_to "$cloud" "cat /YCSB/results/.bench.pid" | tr -d '[:space:]')
+  echo "==> launched detached on VM (PID $pid)"
+
+  if [[ "$block" == "true" ]]; then
+    cmd_wait "$cloud"
+  else
+    echo "    bench.sh wait $cloud   to block until done"
+    echo "    bench.sh tail $cloud   to follow the log"
+  fi
+}
+
+cmd_wait() {
+  local cloud="$1"
+  local pid cell
+  pid=$(ssh_to "$cloud" "cat /YCSB/results/.bench.pid 2>/dev/null" | tr -d '[:space:]' || true)
+  cell=$(ssh_to "$cloud" "cat /YCSB/results/.bench.cell 2>/dev/null" | tr -d '[:space:]' || true)
+  if [[ -z "$pid" ]]; then
+    echo "no benchmark recorded on $cloud"
+    return 0
+  fi
+  if ! ssh_to "$cloud" "kill -0 $pid 2>/dev/null"; then
+    echo "PID $pid is not running (cell $cell already finished)"
+    return 0
+  fi
+  echo "==> waiting for cell $cell on $cloud (PID $pid; polling every 30s)"
+  while ssh_to "$cloud" "kill -0 $pid 2>/dev/null"; do
+    sleep 30
+  done
+  echo "==> cell $cell complete"
+}
+
+cmd_tail() {
+  local cloud="$1"
+  local user host
+  user=$(cloud_ssh_user "$cloud")
+  host=$(vm_host "$cloud")
+  ssh -o StrictHostKeyChecking=accept-new -i "$AWS_SSH_PRIVATE_KEY" \
+    "$user@$host" "tail -f /YCSB/results/.bench.log"
 }
 
 cmd_fetch() {
@@ -330,19 +402,39 @@ cmd_status() {
   echo "==> infra ($cloud):"
   terraform -chdir="$(infra_dir "$cloud")" state list 2>/dev/null | head -20 || echo "  (no state)"
   echo "==> benchmark VM ($cloud):"
+  local vm_up=false
   if [[ -f "$(benchmark_dir "$cloud")/terraform.tfstate" ]]; then
-    terraform -chdir="$(benchmark_dir "$cloud")" output 2>/dev/null || echo "  (no outputs)"
+    if terraform -chdir="$(benchmark_dir "$cloud")" output 2>/dev/null; then
+      vm_up=true
+    else
+      echo "  (state exists but no outputs)"
+    fi
   else
     echo "  (not provisioned)"
+  fi
+  if [[ "$vm_up" == "true" ]]; then
+    echo "==> benchmark process on VM:"
+    local pid cell
+    pid=$(ssh_to "$cloud" "cat /YCSB/results/.bench.pid 2>/dev/null" | tr -d '[:space:]' || true)
+    cell=$(ssh_to "$cloud" "cat /YCSB/results/.bench.cell 2>/dev/null" | tr -d '[:space:]' || true)
+    if [[ -n "$pid" ]] && ssh_to "$cloud" "kill -0 $pid 2>/dev/null"; then
+      echo "  RUNNING: cell=$cell PID=$pid"
+      echo "  log tail:"
+      ssh_to "$cloud" "tail -10 /YCSB/results/.bench.log 2>/dev/null | sed 's/^/    /'" || true
+    elif [[ -n "$pid" ]]; then
+      echo "  finished: last cell=$cell PID=$pid (no longer running)"
+    else
+      echo "  no benchmark recorded"
+    fi
   fi
 }
 
 # Returns 0 if the (cloud, tier, mode) combination is supported by the
 # underlying FileIO implementation, 1 otherwise.  Skip combinations:
-#   aws/std/append    — S3 standard has no append; Jan 2026 didn't measure it
+#   aws/std/append    — S3 standard has no append primitive (only full-object PUT)
 #   gcp/std/append    — GCSFileIO.supportsAppend() == false (immutable objects)
-#   gcp/rapid/append  — Rapid Storage appendable-object protocol is unsafe under
-#                       contention (single-writer; silent byte loss on takeover);
+#   gcp/rapid/append  — Rapid appendable-object protocol unsafe under contention
+#                       (single-writer; silent byte loss on takeover);
 #                       see iceberg/docs/docs/atomic_io_gcs_rapid.md
 mode_supported() {
   local cloud="$1" tier="$2" mode="$3"
@@ -382,7 +474,7 @@ for cloud_arg in "$@"; do
   if [[ "$cloud_arg" =~ ^(aws|azure|gcp)$ ]]; then
     case "$CMD" in
       init|setup|teardown) shift; "cmd_$CMD" "$cloud_arg" "$@"; break ;;
-      up|fetch|down|status|sweep) "cmd_$CMD" "$cloud_arg" ;;
+      up|fetch|down|status|sweep|wait|tail) "cmd_$CMD" "$cloud_arg" ;;
       run) shift; cmd_run "$cloud_arg" "$@"; break ;;
       *) echo "❌ unknown command: $CMD"; usage 1 ;;
     esac
