@@ -101,7 +101,7 @@ ssh_to() {
   local user host
   user=$(cloud_ssh_user "$cloud")
   host=$(vm_host "$cloud")
-  ssh -o StrictHostKeyChecking=accept-new -i "$AWS_SSH_PRIVATE_KEY" "$user@$host" "$@"
+  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i "$AWS_SSH_PRIVATE_KEY" "$user@$host" "$@"
 }
 
 rsync_to() {
@@ -110,7 +110,7 @@ rsync_to() {
   user=$(cloud_ssh_user "$cloud")
   host=$(vm_host "$cloud")
   rsync -az --delete \
-    -e "ssh -o StrictHostKeyChecking=accept-new -i $AWS_SSH_PRIVATE_KEY" \
+    -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i $AWS_SSH_PRIVATE_KEY" \
     "$src" "$user@$host:$dest"
 }
 
@@ -120,7 +120,7 @@ rsync_from() {
   user=$(cloud_ssh_user "$cloud")
   host=$(vm_host "$cloud")
   rsync -az \
-    -e "ssh -o StrictHostKeyChecking=accept-new -i $AWS_SSH_PRIVATE_KEY" \
+    -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i $AWS_SSH_PRIVATE_KEY" \
     "$user@$host:$src" "$dest"
 }
 
@@ -140,27 +140,45 @@ cmd_init() {
   echo "==> terraform init in $dir"
   terraform -chdir="$dir" init -upgrade -input=false
 
-  # Imports.  Each runs only if the resource is not already in state.
+  # State-hygiene migrations and imports.  Each runs only if needed.  Failures
+  # here are fatal — silently swallowing them lets `apply` later try to create
+  # already-existing resources (e.g. BucketAlreadyOwnedByYou on S3 Express).
   case "$cloud" in
     aws)
       if ! terraform -chdir="$dir" state list 2>/dev/null | grep -q '^aws_s3_directory_bucket\.express$'; then
         echo "==> importing existing S3 Express bucket"
-        terraform -chdir="$dir" import aws_s3_directory_bucket.express \
-          "${AWS_BUCKET_X}" || true
+        if ! terraform -chdir="$dir" import aws_s3_directory_bucket.express "${AWS_BUCKET_X}"; then
+          echo "❌ failed to import S3 Express bucket.  Common cause: the AWS principal lacks" >&2
+          echo "   iam:GetRole/GetRolePolicy/ListRolePolicies/ListAttachedRolePolicies and" >&2
+          echo "   s3express:ListTagsForResource/GetBucketTagging on the relevant ARNs." >&2
+          return 1
+        fi
       fi
       ;;
     azure)
+      # Migrate legacy single-container layout: pre-2026-05 main.tf had a single
+      # `azurerm_storage_container.container` (Premium-only).  The split into
+      # container_premium + container_standard requires a state mv so the next
+      # plan doesn't propose destroying the existing data container.
+      if terraform -chdir="$dir" state list 2>/dev/null | grep -q '^azurerm_storage_container\.container$'; then
+        echo "==> migrating legacy state: container → container_premium"
+        terraform -chdir="$dir" state mv \
+          azurerm_storage_container.container azurerm_storage_container.container_premium
+      fi
       if ! terraform -chdir="$dir" state list 2>/dev/null | grep -q '^azurerm_storage_account\.adls_standard$'; then
-        echo "==> import the existing Standard SA via:"
-        echo "    terraform -chdir=$dir import azurerm_storage_account.adls_standard \\"
-        echo "        '/subscriptions/<SUB>/resourceGroups/<RG>/providers/Microsoft.Storage/storageAccounts/lstnsgym'"
-        echo "    Run that with the right subscription and RG, then re-run bench.sh init azure."
+        echo "❌ adls_standard not in state.  Run this with your subscription + RG, then re-run bench.sh init azure:" >&2
+        echo "    terraform -chdir=$dir import azurerm_storage_account.adls_standard \\" >&2
+        echo "        '/subscriptions/<SUB>/resourceGroups/<RG>/providers/Microsoft.Storage/storageAccounts/lstnsgym'" >&2
+        return 1
       fi
       ;;
     gcp)
       if ! terraform -chdir="$dir" state list 2>/dev/null | grep -q '^google_storage_bucket\.rapid$'; then
         echo "==> importing existing Rapid bucket"
-        terraform -chdir="$dir" import google_storage_bucket.rapid "${GCP_BUCKET_RAPID}" || true
+        if ! terraform -chdir="$dir" import google_storage_bucket.rapid "${GCP_BUCKET_RAPID}"; then
+          echo "❌ failed to import Rapid bucket ${GCP_BUCKET_RAPID}." >&2
+          return 1
+        fi
       fi
       ;;
   esac
@@ -220,7 +238,7 @@ cmd_up() {
   local host; host=$(vm_host "$cloud")
   echo "==> waiting for SSH on $host"
   for _ in $(seq 1 60); do
-    if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 \
+    if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 \
          -i "$AWS_SSH_PRIVATE_KEY" "$(cloud_ssh_user "$cloud")@$host" true 2>/dev/null; then
       echo "==> VM ready."
       return 0
@@ -274,7 +292,7 @@ cmd_setup() {
   local user host
   user=$(cloud_ssh_user "$cloud")
   host=$(vm_host "$cloud")
-  local ssh_opts=( -o StrictHostKeyChecking=accept-new -i "$AWS_SSH_PRIVATE_KEY" )
+  local ssh_opts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i "$AWS_SSH_PRIVATE_KEY" )
 
   scp "${ssh_opts[@]}" "$tarball"            "$user@$host:/tmp/ycsb.tgz"
   scp "${ssh_opts[@]}" "$YCSB_TREE/bin/lst.sh" "$user@$host:/tmp/lst.sh"
@@ -336,6 +354,7 @@ cmd_run() {
   ssh_to "$cloud" "
     set -e
     cd /YCSB
+    mkdir -p results
     rm -f results/.bench.pid results/.bench.cell results/.bench.log
     echo '$cell' > results/.bench.cell
     nohup env CLOUD='$cloud' TIER='$tier' CLIENT='$client' MODE='$mode' \\
@@ -369,10 +388,29 @@ cmd_wait() {
     return 0
   fi
   echo "==> waiting for cell $cell on $cloud (PID $pid; polling every 30s)"
-  while ssh_to "$cloud" "kill -0 $pid 2>/dev/null"; do
+  # Distinguish "PID gone" (cell finished) from "ssh unreachable" (transient).
+  # Without this guard, the loop would exit on any SSH failure and falsely
+  # report the cell complete — observed in May 2026 GCP run where the VM
+  # became unreachable mid-cell after ~75 min.
+  local ssh_fail=0
+  while true; do
+    if ! ssh_to "$cloud" "true" >/dev/null 2>&1; then
+      ssh_fail=$((ssh_fail + 1))
+      if (( ssh_fail >= 10 )); then
+        echo "❌ ssh to $cloud VM unreachable for >5 min; giving up on cell $cell" >&2
+        return 1
+      fi
+      echo "==> ssh transient failure (count=$ssh_fail); retrying in 30s" >&2
+      sleep 30
+      continue
+    fi
+    ssh_fail=0
+    if ! ssh_to "$cloud" "kill -0 $pid 2>/dev/null"; then
+      echo "==> cell $cell complete"
+      return 0
+    fi
     sleep 30
   done
-  echo "==> cell $cell complete"
 }
 
 cmd_tail() {
@@ -380,7 +418,7 @@ cmd_tail() {
   local user host
   user=$(cloud_ssh_user "$cloud")
   host=$(vm_host "$cloud")
-  ssh -o StrictHostKeyChecking=accept-new -i "$AWS_SSH_PRIVATE_KEY" \
+  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i "$AWS_SSH_PRIVATE_KEY" \
     "$user@$host" "tail -f /YCSB/results/.bench.log"
 }
 

@@ -50,6 +50,21 @@ TIER="${TIER:-std}"
 MODE="${MODE:-cas}"
 UPD_PROP="${UPD_PROP:-1.0}"
 SAS_DIR="${SAS_DIR:-tokens}"
+# SAS_EXPR is a printf template (one %d for the per-JVM index) resolving to a
+# filename in $SAS_DIR.  The default derives it from BUCKET on Azure so it
+# matches what catalog-bench/azure/generate_sas_keys.sh produces:
+#   tokens/${SA}_${CONTAINER}_sas${i}_${DATE}.json
+# If you generated tokens with a different naming scheme, override SAS_EXPR.
+if [[ -z "${SAS_EXPR:-}" && "${CLOUD:-}" == "azure" && -n "${BUCKET:-}" ]]; then
+  _sas_sa="${BUCKET%/*}"
+  _sas_container="${BUCKET#*/}"
+  _sas_one=$(ls -1 "${SAS_DIR}/${_sas_sa}_${_sas_container}_sas1_"*.json 2>/dev/null | head -1)
+  if [[ -n "$_sas_one" ]]; then
+    _sas_date=${_sas_one##*_sas1_}
+    _sas_date=${_sas_date%.json}
+    SAS_EXPR="${_sas_sa}_${_sas_container}_sas%d_${_sas_date}.json"
+  fi
+fi
 SAS_EXPR="${SAS_EXPR:-client%d_20250527.json}"
 
 if [[ "$LOCAL_RUN" != true && -z "$CLOUD" ]]; then
@@ -145,6 +160,21 @@ YCSB_ARGS=(
 )
 if [[ -n "$MAX_LOG_SIZE_OVERRIDE" ]]; then
   YCSB_ARGS+=( -p fileio.max.log.size=${MAX_LOG_SIZE_OVERRIDE} )
+fi
+
+# Sanity check: if AUTH=sas, the first per-JVM SAS file must actually exist.
+# Without this, missing/misnamed tokens silently produce 0-throughput runs
+# (observed May 2026 — every JVM exited in ~4s with empty results).
+if [[ "$AUTH" == "sas" ]]; then
+  SAS_PROBE=$(printf "${SAS_DIR}/${SAS_EXPR}" 1)
+  if [[ ! -f "$SAS_PROBE" ]]; then
+    echo "❌ AUTH=sas but SAS file not found: $SAS_PROBE" >&2
+    echo "   SAS_EXPR='$SAS_EXPR' SAS_DIR='$SAS_DIR' BUCKET='$BUCKET'" >&2
+    echo "   Available files:" >&2
+    ls -1 "$SAS_DIR/" >&2 || true
+    exit 1
+  fi
+  echo "SAS probe ok: $SAS_PROBE"
 fi
 
 # === Run loop ===

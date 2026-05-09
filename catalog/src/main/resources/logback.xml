@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Quiet the noisy SDKs and transports.  Default DEBUG levels
+       generated 2.1+ GB / 100 min logs in the May 2026 sweep, filling
+       small EBS root volumes and distorting throughput numbers. -->
+  <logger name="software.amazon.awssdk" level="WARN"/>
+  <logger name="org.apache.iceberg.aws.shaded" level="WARN"/>
+  <logger name="com.azure" level="WARN"/>
+  <logger name="org.apache.iceberg.azure.shaded" level="WARN"/>
+  <logger name="com.google.cloud" level="WARN"/>
+  <logger name="org.apache.iceberg.gcp.shaded" level="WARN"/>
+  <logger name="io.netty" level="WARN"/>
+  <logger name="io.grpc" level="WARN"/>
+  <logger name="reactor" level="WARN"/>
+  <logger name="org.apache.http" level="WARN"/>
+  <logger name="org.apache.hc" level="WARN"/>
+
+  <!-- Keep iceberg + YCSB at INFO so config errors / warnings still surface. -->
+  <logger name="org.apache.iceberg" level="INFO"/>
+  <logger name="site.ycsb" level="INFO"/>
+
+  <root level="WARN">
+    <appender-ref ref="STDOUT"/>
+  </root>
+</configuration>

@@ -8,7 +8,7 @@ iam_instance_profile_name="ycsb-ec2-instance-profile"
 
 # EC2 instance
 # instance_type="t3.medium"
-instance_type="m5.4xlarge"
+instance_type="m5.2xlarge"
 # ami_id="ami-08c40ec9ead489470" # Ubuntu 20.04 for us-west-2 (update if needed)
 ami_id = "ami-0c1ade727754a7a75"  # Jammy 22.04 LTS, amd64, hvm:ebs-ssd
 subnet_id="subnet-0768f86d4a1318aab"
