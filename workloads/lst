@@ -38,9 +38,12 @@
 fileio.max.attempts=1
 # LST: base file size (2 KiB catalog-sized object)
 fileio.file.size=2048
-# LST: max log size before CAS reset.  Default 16 MiB; bin/lst.sh sets to 0
-# for cas mode.  ~9900 256-byte appends fit within 16 MiB - 2 KiB base.
-fileio.max.log.size=16777216
+# LST: max log size before CAS reset.  bin/lst.sh overrides to 0 for cas mode.
+# 9900 × 256-byte appends = 2_534_400 bytes; the cap stays below S3 Express's
+# 10000-part-per-object multipart limit (one S3 part per append on awsx/append).
+# The earlier 16 MiB default produced ~64K appends and tripped TooManyPartsException
+# on the 2026-05-08 sweep's threads=8 runs.
+fileio.max.log.size=2534400
 # LST: size of each append operation
 fileio.delta.size=256
 

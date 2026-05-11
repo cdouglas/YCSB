@@ -33,6 +33,26 @@
     <iceberg.local_version>1.11.0-SNAPSHOT</iceberg.local_version>
   </properties>
 
+  <!-- Pin Google Cloud SDK versions through the libraries-bom so transitive deps stay
+       internally consistent. Without this, an individually-pinned google-cloud-storage
+       leaves protobuf-java / grpc-protobuf / proto-google-* on whatever each transitive
+       chain happens to resolve, producing runtime ClassCastException in the gRPC
+       Storage stub initialization (com.google.storage.v2.DeleteBucketRequest cannot be
+       cast to com.google.protobuf.MessageLite). The same bom is pinned in iceberg-gcp,
+       so this keeps the YCSB binding's classpath in sync with what iceberg-gcp was
+       compiled against. -->
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>com.google.cloud</groupId>
+        <artifactId>libraries-bom</artifactId>
+        <version>26.80.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
   <dependencies>
     <dependency>
       <groupId>com.github.ben-manes.caffeine</groupId>
@@ -96,25 +116,21 @@
       <artifactId>iceberg-gcp</artifactId>
       <version>${iceberg.local_version}</version>
     </dependency>
-    <dependency>
-      <groupId>org.apache.iceberg</groupId>
-      <artifactId>iceberg-gcp-bundle</artifactId>
-      <version>${iceberg.local_version}</version>
-    </dependency>
+    <!-- iceberg-gcp-bundle is intentionally NOT included: the shaded bundle packages an
+         older com.google.protobuf.MessageLite alongside its own GCS client, which
+         collides with the libraries-bom-resolved protobuf-java 4.x on this classpath
+         and produces ClassCastException in the gRPC Storage stub static init. The
+         google-cloud-storage / google-cloud-monitoring etc. needed at runtime come
+         from the explicit google-cloud-storage dep below + libraries-bom transitives. -->
     <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-common</artifactId>
       <version>${hadoop.version}</version>
     </dependency>
+    <!-- Version pinned by the libraries-bom import in dependencyManagement above. -->
     <dependency>
       <groupId>com.google.cloud</groupId>
       <artifactId>google-cloud-storage</artifactId>
-      <version>2.50.0</version>
-    </dependency>
-    <dependency>
-        <groupId>com.google.protobuf</groupId>
-        <artifactId>protobuf-java</artifactId>
-        <version>3.23.2</version>
     </dependency>
     <dependency>
       <groupId>org.xerial</groupId>

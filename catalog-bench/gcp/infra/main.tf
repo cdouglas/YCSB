@@ -45,6 +45,23 @@ resource "google_project_iam_binding" "storage_binding" {
   ]
 }
 
+# Bucket-metadata read access, needed by GCSFileIO.PrefixedStorage.isZonalBucket()
+# to route writes through the stage-and-move path on Rapid (zonal) buckets.
+# Without this, the probe fails with 403 and the SDK falls back to the
+# blobWriteSession path -- which zonal buckets reject with HTTP 400.
+# (roles/storage.legacyBucketReader is bucket-scoped only; granted per-bucket.)
+resource "google_storage_bucket_iam_member" "rapid_bucket_reader" {
+  bucket = google_storage_bucket.rapid.name
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${google_service_account.benchmark_sa.email}"
+}
+
+resource "google_storage_bucket_iam_member" "standard_bucket_reader" {
+  bucket = google_storage_bucket.standard.name
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${google_service_account.benchmark_sa.email}"
+}
+
 # Standard-class GCS bucket in us-west4 (multi-region not required; same region
 # as the VM keeps RTT clean against the Rapid Zonal bucket).
 resource "google_storage_bucket" "standard" {
